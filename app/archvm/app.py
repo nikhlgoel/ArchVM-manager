@@ -57,13 +57,37 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     paths.ensure_dirs()
-
     settings = AppSettings.load()
-    if settings.vm_root and settings.vm_root != str(paths.ROOT):
-        pass  # paths already honoured the hint at import time
 
+    # Splash covers the first-run work: reading the host, building the window.
+    splash = None
+    if not (start_in_tray or settings.start_minimised):
+        try:
+            from . import theme
+            from .splash import Splash
+            splash = Splash(theme.resolve(settings.theme),
+                            reduce_motion=settings.reduce_motion)
+            splash.start()
+        except Exception:
+            splash = None
+
+    def stage(text: str, frac: float | None = None) -> None:
+        if splash is not None:
+            splash.set_status(text, frac)
+
+    stage("Reading your Windows settings…", 0.15)
+    try:
+        from . import hostinfo
+        hostinfo.cached()
+    except Exception:
+        pass
+
+    stage("Loading configuration…", 0.45)
     cfg = VMConfig.load()
+
+    stage("Preparing the interface…", 0.72)
     win = MainWindow(cfg, settings)
+    stage("Ready", 1.0)
 
     tray = None
     if QSystemTrayIcon.isSystemTrayAvailable():
@@ -78,7 +102,12 @@ def main(argv: list[str] | None = None) -> int:
         app.setQuitOnLastWindowClosed(True)
 
     if not (start_in_tray or settings.start_minimised) or tray is None:
-        win.show()
+        if splash is not None:
+            splash.finish(win)
+        else:
+            win.show()
+    elif splash is not None:
+        splash.finish(None)
 
     # First run, or an incomplete environment, opens the guided setup.
     if not start_in_tray and not settings.start_minimised:

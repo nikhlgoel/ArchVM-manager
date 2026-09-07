@@ -14,15 +14,20 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QComboBox, QSpinBox, QLineEdit, QPlainTextEdit, QTextEdit, QCheckBox,
     QFormLayout, QMessageBox, QStackedWidget, QButtonGroup, QScrollArea,
-    QInputDialog, QApplication, QProgressBar, QFileDialog, QSlider,
+    QInputDialog, QApplication, QProgressBar, QFileDialog, QSlider, QFrame,
 )
 
 from . import hostinfo, icons, paths, qemu, theme
 from .config import AppSettings, VMConfig, INSTALL_CMD
-from .widgets import (Backdrop, Card, Chip, MeterBar, Stat, StatusDot, Toast,
-                      a11y, button, elevate, hline)
+from .widgets import (AlertBar, Backdrop, Card, Chip, MeterBar, Stat,
+                      StatusDot, Toast, a11y, button, elevate, hline)
 
-PAGES = ["Overview", "Hardware", "Guest", "Tools", "Settings", "Logs"]
+NAV_SECTIONS = [
+    ("MACHINE", ["Overview", "Hardware"]),
+    ("SETUP", ["Guest", "Tools"]),
+    ("SYSTEM", ["Settings", "Logs"]),
+]
+PAGES = [name for _section, items in NAV_SECTIONS for name in items]
 
 
 class MainWindow(QMainWindow):
@@ -77,6 +82,9 @@ class MainWindow(QMainWindow):
         rv = QVBoxLayout(right)
         rv.setContentsMargins(0, 0, 0, 0)
         rv.setSpacing(0)
+
+        self.alert = AlertBar()
+        rv.addWidget(self.alert)
 
         self.toast = Toast()
         tw = QWidget()
@@ -140,54 +148,89 @@ class MainWindow(QMainWindow):
         return ""
 
     def _sidebar(self) -> QWidget:
+        """
+        Navigation rail: mark, grouped sections, then a help affordance and the
+        product name pinned to the bottom.
+        """
         w = QWidget()
         w.setObjectName("Sidebar")
-        w.setFixedWidth(212)
+        w.setFixedWidth(206)
         v = QVBoxLayout(w)
-        v.setContentsMargins(14, 18, 14, 14)
-        v.setSpacing(4)
+        v.setContentsMargins(12, 16, 12, 14)
+        v.setSpacing(3)
 
         head = QHBoxLayout()
+        head.setSpacing(9)
         logo = QLabel()
-        logo.setPixmap(icons.app_icon().pixmap(QSize(30, 30)))
+        logo.setPixmap(icons.app_icon().pixmap(QSize(32, 32)))
         txt = QVBoxLayout()
         txt.setSpacing(0)
         b = QLabel(paths.APP_NAME)
         b.setObjectName("Brand")
-        s = QLabel("Arch · Hyprland")
-        s.setObjectName("BrandSub")
+        sub = QLabel("Arch \u00b7 Hyprland")
+        sub.setObjectName("BrandSub")
         txt.addWidget(b)
-        txt.addWidget(s)
+        txt.addWidget(sub)
         head.addWidget(logo)
         head.addLayout(txt)
         head.addStretch()
         v.addLayout(head)
-        v.addSpacing(18)
+        v.addSpacing(16)
 
         self.nav = QButtonGroup(self)
         self.nav.setExclusive(True)
-        for i, name in enumerate(PAGES):
-            btn = QPushButton(name)
-            btn.setObjectName("Nav")
-            btn.setCheckable(True)
-            btn.setChecked(i == 0)
-            btn.setCursor(Qt.PointingHandCursor)
-            a11y(btn, name, f"Go to {name} (Ctrl+{i + 1})")
-            btn.clicked.connect(lambda _c, idx=i: self._go(idx))
-            self.nav.addButton(btn, i)
-            v.addWidget(btn)
+        idx = 0
+        for section, items in NAV_SECTIONS:
+            lab = QLabel(section)
+            lab.setObjectName("SectionLabel")
+            v.addWidget(lab)
+            v.addSpacing(2)
+            for name in items:
+                btn = QPushButton(name)
+                btn.setObjectName("Nav")
+                btn.setCheckable(True)
+                btn.setChecked(idx == 0)
+                btn.setCursor(Qt.PointingHandCursor)
+                a11y(btn, name, f"Go to {name} (Ctrl+{idx + 1})")
+                btn.clicked.connect(lambda _c, i=idx: self._go(i))
+                self.nav.addButton(btn, idx)
+                v.addWidget(btn)
+                idx += 1
+            v.addSpacing(12)
 
         v.addStretch()
-        v.addWidget(hline())
-        v.addSpacing(8)
-        row = QHBoxLayout()
+
+        helprow = QHBoxLayout()
+        helprow.addStretch()
+        hb = QPushButton("?")
+        hb.setObjectName("Help")
+        hb.setFixedSize(38, 38)
+        hb.setCursor(Qt.PointingHandCursor)
+        a11y(hb, "Help", "Documentation and keyboard shortcuts (F1)")
+        hb.clicked.connect(self._about)
+        helprow.addWidget(hb)
+        helprow.addStretch()
+        v.addLayout(helprow)
+        hint = QLabel("Need help")
+        hint.setObjectName("RailFoot")
+        hint.setAlignment(Qt.AlignCenter)
+        v.addWidget(hint)
+        v.addSpacing(12)
+
+        rule = QFrame()
+        rule.setObjectName("RailRule")
+        rule.setFrameShape(QFrame.HLine)
+        v.addWidget(rule)
+        v.addSpacing(9)
+
+        statusrow = QHBoxLayout()
         self.dot = StatusDot()
         self.state_lbl = QLabel("Stopped")
-        self.state_lbl.setObjectName("CardHint")
-        row.addWidget(self.dot)
-        row.addWidget(self.state_lbl)
-        row.addStretch()
-        v.addLayout(row)
+        self.state_lbl.setObjectName("RailFoot")
+        statusrow.addWidget(self.dot)
+        statusrow.addWidget(self.state_lbl)
+        statusrow.addStretch()
+        v.addLayout(statusrow)
         return w
 
     def _page(self, title: str, sub: str) -> tuple[QScrollArea, QVBoxLayout]:
@@ -1068,6 +1111,9 @@ class MainWindow(QMainWindow):
 
     def _error(self, msg: str) -> None:
         self._log("[error] " + msg)
+        first = msg.strip().splitlines()[0] if msg.strip() else "Something went wrong"
+        self.alert.show_alert(first, kind="error",
+                              action="Details", on_action=lambda: self._go(5))
         QMessageBox.critical(self, "Problem", msg)
 
     def _copy(self, text: str) -> None:
