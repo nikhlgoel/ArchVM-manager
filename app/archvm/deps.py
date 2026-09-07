@@ -241,34 +241,32 @@ def _d_qemu() -> tuple[Status, str]:
     return Status.MISSING, "QEMU is not installed"
 
 
-def _d_virgl() -> tuple[Status, str]:
+def _d_display() -> tuple[Status, str]:
     """
-    Report whether virgl is *present*, not whether it works.
+    Confirm the configured GPU/display pairing actually starts.
 
-    Presence is all that can be checked cheaply. Whether the GL path survives
-    depends on the QEMU build's display backend, and some Windows builds crash
-    with an access violation seconds after the guest starts driving the GPU -
-    only with a guest actually running, so no pre-flight probe sees it. When
-    that has already happened once, the app records it and this reports the
-    truth instead of the promise.
+    This is the check that matters most: a bad pairing does not degrade
+    gracefully. It either aborts QEMU or shows a permanently black window, and
+    both look like the virtual machine failing rather than the display.
     """
     if not paths.QEMU_BIN.exists():
         return Status.UNKNOWN, "needs QEMU"
-    code, out = _run([str(paths.QEMU_BIN), "-device", "help"], timeout=40)
-    if "virtio-vga-gl" not in out:
-        return Status.WARN, "No virgl in this QEMU build; Hyprland will software-render"
-
     try:
-        import json
-        f = paths.SETTINGS_FILE
-        if f.exists() and json.loads(f.read_text(encoding="utf-8")).get("gl_unusable"):
-            return (Status.WARN,
-                    "virtio-vga-gl is present but crashed this QEMU build; "
-                    "using software rendering")
+        from .config import VMConfig
+        from .qemu import display_is_supported, probe_display
+        cfg = VMConfig.load(apply_host_defaults=False)
+        gpu, disp = cfg.gpu, cfg.display
     except Exception:
-        pass
+        gpu, disp = "virtio-vga", "gtk"
+        from .qemu import display_is_supported, probe_display
 
-    return Status.OK, "virtio-vga-gl present â€” 3D will be tried, with a fallback"
+    ok, why = display_is_supported(gpu, disp)
+    if not ok:
+        return Status.WARN, f"{gpu} + {disp} will not render. {why}"
+    ran, err = probe_display(gpu, disp)
+    if ran:
+        return Status.OK, f"{gpu} via {disp.split(',')[0]} starts cleanly"
+    return Status.WARN, f"{gpu} + {disp} failed to start: {err}"
 
 
 def _d_disk() -> tuple[Status, str]:
@@ -468,9 +466,9 @@ def build_checks() -> list[Check]:
                   "--accept-source-agreements --accept-package-agreements "
                   "--disable-interactivity\n"
                   "if ($LASTEXITCODE -ne 0) { $ok=$false }\n")),
-        Check("virgl", "3D acceleration (virgl)",
-              "Lets Hyprland composite on the GPU instead of the CPU.",
-              _d_virgl),
+        Check("display", "Graphics output",
+              "The GPU and window backend QEMU uses to show the guest.",
+              _d_display),
         Check("ssh", "OpenSSH client",
               "Used to open a terminal into the guest with working copy/paste.",
               _d_ssh,

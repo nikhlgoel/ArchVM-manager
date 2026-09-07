@@ -67,6 +67,95 @@ def unsupported_chars(text: str) -> list[str]:
     return sorted({c for c in text if char_to_key(c) is None})
 
 
+# --------------------------------------------------------------------------- #
+#  Display validation
+# --------------------------------------------------------------------------- #
+#  Pairings known to be broken on Windows. virgl needs DMABUF to present its
+#  scanout, and no Windows display backend provides it: GTK aborts with
+#  "GtkGLArea console lacks DMABUF support", SDL stays up but renders nothing.
+BROKEN_PAIRINGS = {
+    ("virtio-vga-gl", "gtk"),
+    ("virtio-vga-gl", "sdl"),
+    ("virtio-gpu-gl", "gtk"),
+    ("virtio-gpu-gl", "sdl"),
+}
+
+SAFE_GPU = "virtio-vga"
+SAFE_DISPLAY = "gtk"
+
+
+def display_is_supported(gpu: str, display: str) -> tuple[bool, str]:
+    """
+    Static check of a GPU/display pairing, without launching anything.
+
+    Returns (ok, reason). Only the GL pairings are rejected; everything else is
+    assumed fine until probe_display() says otherwise.
+    """
+    backend = display.split(",")[0].strip()
+    gl_on = "gl=on" in display or "gl=es" in display
+    gpu_is_gl = gpu.endswith("-gl")
+
+    if gpu_is_gl and (gpu, backend) in BROKEN_PAIRINGS:
+        return False, (
+            f"{gpu} needs DMABUF to present its display, which the {backend} "
+            "backend does not provide on Windows. The window would stay black "
+            "or QEMU would exit.")
+    if gpu_is_gl and not gl_on:
+        return False, (
+            f"{gpu} requires a display with gl=on; {backend} was requested "
+            "without it, and QEMU refuses to start.")
+    if gl_on and not gpu_is_gl:
+        return False, (
+            f"{display} enables OpenGL but {gpu} cannot use it.")
+    return True, ""
+
+
+def safe_display_for(gpu: str, display: str) -> tuple[str, str, str]:
+    """
+    Return a pairing that will actually work, plus a note when it was changed.
+    """
+    ok, why = display_is_supported(gpu, display)
+    if ok:
+        return gpu, display, ""
+    backend = display.split(",")[0].strip()
+    if backend not in ("gtk", "sdl"):
+        backend = SAFE_DISPLAY
+    return SAFE_GPU, backend, why
+
+
+def probe_display(gpu: str, display: str, timeout: float = 6.0) -> tuple[bool, str]:
+    """
+    Launch QEMU with the pairing and no guest, and see whether it survives.
+
+    Cheap insurance: a pairing that aborts here would otherwise abort with the
+    user's VM attached, which looks like the VM failing rather than the display.
+    """
+    if not paths.QEMU_BIN.exists():
+        return False, "QEMU not found"
+    args = [
+        str(paths.QEMU_BIN),
+        "-machine", "q35,accel=whpx,kernel-irqchip=off",
+        "-m", "256", "-nodefaults",
+        "-device", gpu,
+        "-display", display,
+    ]
+    try:
+        proc = subprocess.Popen(args, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        try:
+            _out, err = proc.communicate(timeout=timeout)
+            text = (err or b"").decode("utf-8", "replace").strip()
+            first = text.splitlines()[0] if text else f"exited with {proc.returncode}"
+            return False, first
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.communicate()
+            return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
 class MonitorClient(QObject):
     """Speaks HMP over TCP.  All work happens off the UI thread."""
 

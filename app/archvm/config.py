@@ -80,8 +80,8 @@ class VMConfig(_Base):
     seed_iso: str = ""
     ovmf_code: str = ""
     ovmf_vars: str = ""
-    display: str = "gtk,gl=on"
-    gpu: str = "virtio-vga-gl"
+    display: str = "gtk"
+    gpu: str = "virtio-vga"
     width: int = 1920
     height: int = 1080
     accel: str = "whpx"
@@ -93,6 +93,24 @@ class VMConfig(_Base):
     keyboard: str = "ps2"
     keymap: str = "en-us"
     username: str = "arch"
+
+    def migrate(self) -> str:
+        """
+        Repair settings saved by older versions.
+
+        Early builds defaulted to virtio-vga-gl with an OpenGL display, which
+        does not work on Windows - GTK aborts and SDL renders nothing. Anyone
+        upgrading still has that in their config, so correct it here rather
+        than letting them hit a black screen again.
+        """
+        from .qemu import safe_display_for
+        gpu, display, why = safe_display_for(self.gpu, self.display)
+        if (gpu, display) == (self.gpu, self.display):
+            return ""
+        old = f"{self.gpu} + {self.display}"
+        self.gpu, self.display = gpu, display
+        self.save()
+        return f"Display changed from {old} to {gpu} + {display}. {why}"
 
     def __post_init__(self) -> None:
         # QEMU's SDL backend services its window on the emulation thread here,
@@ -122,6 +140,7 @@ class VMConfig(_Base):
         cfg = cls._from_dict(data)
         if fresh and apply_host_defaults:
             cfg.apply_host_defaults()
+        cfg.migration_note = cfg.migrate()
         return cfg
 
     def apply_host_defaults(self) -> list[str]:

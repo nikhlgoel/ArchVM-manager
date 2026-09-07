@@ -71,6 +71,12 @@ class MainWindow(QMainWindow):
         self._timer.timeout.connect(self._refresh)
         self._timer.start(1200)
 
+        note = getattr(cfg, "migration_note", "")
+        if note:
+            QTimer.singleShot(700, lambda: self.alert.show_alert(
+                note, kind="warn", action="Hardware", on_action=lambda: self._go(1)))
+            QTimer.singleShot(750, lambda: self._log("[config] " + note))
+
     # ------------------------------------------------------------------ #
     #  Construction
     # ------------------------------------------------------------------ #
@@ -443,14 +449,18 @@ class MainWindow(QMainWindow):
         c2 = Card("Display")
         f2 = QFormLayout(); f2.setSpacing(10)
         self.cb_gpu = QComboBox()
-        self.cb_gpu.addItems(["virtio-vga-gl", "virtio-vga", "qxl-vga", "VGA"])
+        self.cb_gpu.addItems(["virtio-vga", "qxl-vga", "VGA"])
+        if self.cfg.gpu not in ("virtio-vga", "qxl-vga", "VGA"):
+            self.cb_gpu.addItem(self.cfg.gpu)
         self.cb_gpu.setCurrentText(self.cfg.gpu)
-        a11y(self.cb_gpu, "GPU device", "virtio-vga-gl enables virgl 3D acceleration")
+        a11y(self.cb_gpu, "GPU device",
+             "virtio-vga is the fastest option that renders on Windows")
         f2.addRow("GPU device", self.cb_gpu)
         self.cb_disp = QComboBox()
-        self.cb_disp.addItems(["gtk,gl=on", "gtk", "gtk,gl=es"])
-        self.cb_disp.setCurrentText(self.cfg.display)
-        a11y(self.cb_disp, "Display backend", "GTK releases keyboard grabs more reliably on Windows")
+        self.cb_disp.addItems(["gtk", "sdl"])
+        self.cb_disp.setCurrentText(self.cfg.display.split(",")[0])
+        a11y(self.cb_disp, "Display backend",
+             "GTK releases keyboard grabs more reliably on Windows")
         f2.addRow("Backend", self.cb_disp)
         rw = QWidget(); rl = QHBoxLayout(rw); rl.setContentsMargins(0, 0, 0, 0)
         self.sp_w = QSpinBox(); self.sp_w.setRange(640, 3840); self.sp_w.setValue(self.cfg.width)
@@ -859,6 +869,9 @@ class MainWindow(QMainWindow):
         self.cfg.accel = self.cb_accel.currentText()
         self.cfg.gpu = self.cb_gpu.currentText()
         self.cfg.display = self.cb_disp.currentText()
+        # Never let a stale or hand-edited pairing reach QEMU.
+        self.cfg.gpu, self.cfg.display, _why = qemu.safe_display_for(
+            self.cfg.gpu, self.cfg.display)
         self.cfg.width = self.sp_w.value()
         self.cfg.height = self.sp_h.value()
         self.cfg.fullscreen = self.ck_fs.isChecked()
