@@ -94,7 +94,7 @@ settings in `%APPDATA%\ArchVM`.
 Verify your download against `SHA256SUMS.txt`:
 
 ```powershell
-Get-FileHash .\ArchVM-2.1.0-windows-x64.zip -Algorithm SHA256
+Get-FileHash .\ArchVM-2.1.1-windows-x64.zip -Algorithm SHA256
 ```
 
 Releases are **not code-signed**, so SmartScreen will warn on first run — choose

@@ -8,10 +8,10 @@ Arch install then runs start to finish on its own.
 
 | File | |
 |---|---|
-| **`ArchVM-2.1.0-windows-x64-setup.exe`** | **Recommended.** Proper installer — Start Menu entry, optional desktop shortcut, and an uninstaller in Add/Remove Programs. Installs per-user with no UAC prompt, or system-wide if you choose. |
-| `ArchVM-2.1.0-windows-x64.zip` | Portable. Unzip anywhere and run `ArchVM.exe`. Nothing is written to the registry. |
-| `ArchVM-2.1.0-windows-x64-portable.exe` | Portable, single file. Tidiest, a few seconds slower to start. |
-| `seed-2.1.0.iso` | Only if rebuilding the seed ISO by hand. The app makes its own. |
+| **`ArchVM-2.1.1-windows-x64-setup.exe`** | **Recommended.** Proper installer — Start Menu entry, optional desktop shortcut, and an uninstaller in Add/Remove Programs. Installs per-user with no UAC prompt, or system-wide if you choose. |
+| `ArchVM-2.1.1-windows-x64.zip` | Portable. Unzip anywhere and run `ArchVM.exe`. Nothing is written to the registry. |
+| `ArchVM-2.1.1-windows-x64-portable.exe` | Portable, single file. Tidiest, a few seconds slower to start. |
+| `seed-2.1.1.iso` | Only if rebuilding the seed ISO by hand. The app makes its own. |
 
 Uninstalling never touches your VM disks or ISOs, and asks before removing your
 settings.
@@ -19,7 +19,7 @@ settings.
 Check your download against `SHA256SUMS.txt`:
 
 ```powershell
-Get-FileHash .\ArchVM-2.1.0-windows-x64.zip -Algorithm SHA256
+Get-FileHash .\ArchVM-2.1.1-windows-x64.zip -Algorithm SHA256
 ```
 
 Not code-signed, so SmartScreen warns on first run — *More info → Run anyway*.

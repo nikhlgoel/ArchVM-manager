@@ -36,7 +36,7 @@ LicenseFile=..\..\LICENSE
 ; only the individual fixes that require it. So offer a per-user install too,
 ; which needs no UAC prompt at all.
 PrivilegesRequired=lowest
-PrivilegesRequiredOverridesAllowed=dialog
+PrivilegesRequiredOverridesAllowed=dialog commandline
 
 OutputDir=..\..\release
 OutputBaseFilename=ArchVM-{#AppVersion}-windows-x64-setup
