@@ -1,11 +1,28 @@
 # ArchVM Manager
 
+[![CI](https://github.com/nikhlgoel/ArchVM-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/nikhlgoel/ArchVM-manager/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/nikhlgoel/ArchVM-manager?sort=semver)](https://github.com/nikhlgoel/ArchVM-manager/releases/latest)
+[![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+[![Platform: Windows](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078d4.svg)](#requirements)
+
 A Windows desktop application that installs and runs **Arch Linux with Hyprland**
 in QEMU — including a guided setup wizard that finds what your PC is missing and
 installs it for you.
 
 `virt-manager` is Linux-only, so managing plain QEMU on Windows means hand-written
 command lines. This fills that gap.
+
+![The overview page](docs/ui-overview.png)
+
+<details>
+<summary>More screenshots</summary>
+
+| | |
+|---|---|
+| ![Setup wizard](docs/ui-setup.png) | ![Hardware](docs/ui-hardware.png) |
+| ![Settings](docs/ui-settings.png) | ![Startup splash](docs/splash-dark.png) |
+
+</details>
 
 ---
 
@@ -60,7 +77,36 @@ reboot) and adds the **OpenSSH client**, both with your approval.
 
 ---
 
-## Running it
+## Download
+
+Grab the latest build from the [releases page](https://github.com/nikhlgoel/ArchVM-manager/releases/latest):
+
+| File | Use it when |
+|---|---|
+| `ArchVM-<version>-windows-x64.zip` | **Recommended.** Unzip anywhere and run `ArchVM.exe`. Starts fast. |
+| `ArchVM-<version>-windows-x64-portable.exe` | A single self-contained file. Tidier, a few seconds slower to start. |
+| `seed-<version>.iso` | Only if you are rebuilding the seed ISO by hand. The app generates its own. |
+
+Verify your download against `SHA256SUMS.txt`:
+
+```powershell
+Get-FileHash .\ArchVM-2.1.0-windows-x64.zip -Algorithm SHA256
+```
+
+Releases are **not code-signed**, so SmartScreen will warn on first run — choose
+*More info → Run anyway*. See [`docs/code-signing.md`](docs/code-signing.md) for
+why, and what it would take to change.
+
+### Windows only
+
+This is not a portability oversight. The app is built on `winget`, `dism`, the
+Windows registry and Win32 APIs, and exists because `virt-manager` does not run
+on Windows. **On Linux, use `virt-manager`** — it is a better tool than a port of
+this one would be. There is no macOS build.
+
+---
+
+## Running from source
 
 ```bash
 git clone https://github.com/nikhlgoel/ArchVM-manager.git
@@ -93,7 +139,8 @@ app/            the desktop application
   run.py        source-tree launcher
 seed/           the three-stage Arch installer that runs inside the VM
 manager/        build_seed.py — packs the installer scripts into seed.iso
-docs/           VM guide, troubleshooting, keybind reference
+docs/           VM guide, code-signing guide, screenshots
+.github/        CI and release workflows, issue and PR templates
 ```
 
 `seed/vm.conf` holds the guest username and passwords in plain text and is
@@ -111,6 +158,12 @@ Linux; `build_seed.py` normalises on build, but configure your editor too.
   troubleshooting, Hyprland keybinds
 - [`app/README.md`](app/README.md) — module layout, theming, accessibility,
   setup-wizard internals
+- [`docs/code-signing.md`](docs/code-signing.md) — why the builds are unsigned,
+  and the options for changing that
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — development setup, house style, scope
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release
+- [`SECURITY.md`](SECURITY.md) — reporting vulnerabilities, and an honest account
+  of what the app does with administrator rights
 
 ---
 

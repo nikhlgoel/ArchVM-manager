@@ -33,6 +33,10 @@ Output: `dist/ArchVM/ArchVM.exe` (~2.4 MB exe, ~111 MB bundle).
 | `archvm/qemu.py` | `VMRunner` (process), `MonitorClient` (HMP text injection), disk helpers |
 | `archvm/widgets.py` | `Card`, `Stat`, `StatusDot`, `Toast`, accessible `button()` |
 | `archvm/window.py` | Main window, six pages, all actions |
+| `archvm/splash.py` | Animated startup splash, drawn with QPainter |
+| `archvm/hostinfo.py` | Probes the Windows host for sensible VM defaults |
+| `archvm/deps.py` | Environment detection and the elevated repair engine |
+| `archvm/onboarding.py` | The five-step guided setup wizard |
 | `archvm/tray.py` | Tray icon and full right-click menu |
 | `archvm/app.py` | Entry point, single-instance guard, tray lifecycle |
 | `build.py` | Icon generation + PyInstaller + shortcuts |
@@ -157,6 +161,6 @@ Fallbacks, all automatic:
 
 ## Notes
 
-The legacy single-file `manager/archvm_manager.py` still works but is superseded
-by this app. `manager/build_seed.py` is still used — the Guest page calls it to
-regenerate `seed.iso`.
+`manager/build_seed.py` sits outside the package on purpose: it has no Qt
+dependency and runs standalone, so the seed ISO can be rebuilt without the GUI.
+The Guest page shells out to it to regenerate `seed.iso` after `vm.conf` changes.
