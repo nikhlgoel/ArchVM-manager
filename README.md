@@ -56,9 +56,17 @@ app, and not by any other:
 - **Laptop dGPUs** are typically muxless: they render into the iGPU's framebuffer
   and have no independent display path for a guest to drive.
 
-Instead the VM uses `virtio-vga-gl` (**virgl**) — hardware-accelerated OpenGL
-through the host's driver. Hyprland's compositing, blur and animations are smooth.
-It is not the same as running on bare metal. If you want the real GPU, dual-boot.
+Instead the VM uses **`virtio-vga` with Mesa's software renderer**. Hyprland
+runs and is usable, but compositing happens on the CPU.
+
+> **virgl does not work on Windows.** `virtio-vga-gl` needs DMABUF to present
+> its scanout, and no Windows QEMU display backend provides it — GTK aborts with
+> *"GtkGLArea console lacks DMABUF support"*, and SDL stays running but never
+> renders. Earlier versions of this project defaulted to that pairing and
+> produced a black window or a dead QEMU process. The GL options are no longer
+> offered, and a saved configuration containing one is corrected on load.
+
+If you want real GPU acceleration, that means bare metal: dual-boot.
 
 ---
 

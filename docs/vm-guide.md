@@ -209,3 +209,65 @@ dism /online /enable-feature /featurename:HypervisorPlatform /all /norestart
 
 - [end-4/dots-hyprland](https://github.com/end-4/dots-hyprland) — illogical-impulse
 - [pctrade/end4-pc](https://github.com/pctrade/end4-pc) — the Quickshell fork
+
+---
+
+## Graphics: why there is no OpenGL
+
+**virgl (`virtio-vga-gl`) does not work on Windows hosts.** It needs DMABUF to
+present its scanout, and no Windows QEMU display backend implements it:
+
+| Pairing | What happens |
+|---|---|
+| `virtio-vga-gl` + `gtk,gl=on` | QEMU **exits**: *GtkGLArea console lacks DMABUF support* |
+| `virtio-vga-gl` + `sdl,gl=on` | QEMU runs, window stays **black** — the scanout never presents |
+| `virtio-vga` + `gtk` | **Works** |
+| `virtio-vga` + `sdl` | **Works** |
+
+So the VM uses plain `virtio-vga`, and the guest falls back to Mesa's `llvmpipe`
+software renderer. Hyprland runs; compositing is on the CPU. Turning blur off in
+`~/.config/hypr/custom/general.lua` helps noticeably.
+
+Verify inside the guest with:
+
+```bash
+glxinfo -B | grep -i renderer
+```
+
+`llvmpipe` is expected here. There is no configuration that produces `virgl` on
+a Windows host.
+
+---
+
+## "TDX not supported by the host platform"
+
+Harmless. The Linux kernel's TDX guest driver probes for Intel Trust Domain
+Extensions on every boot and logs this at error priority when they are absent —
+which they always are in a normal VM. It has no effect on the install and can be
+ignored.
+
+---
+
+## The screen looks blank after boot
+
+The console is almost certainly working. Press **Enter** — the login prompt is
+drawn once, and a short prompt on a 1920x1080 black screen is easy to miss.
+
+If the window is genuinely black and does not respond to Enter, the display
+pairing is wrong; see the graphics table above. Newer builds correct this
+automatically on startup and tell you they did.
+
+## The desktop install stopped partway
+
+It is resumable and idempotent. Log in again — it restarts by itself — or run:
+
+```bash
+~/firstboot.sh
+```
+
+Progress is appended to `~/hypr-install.log`, so you can see exactly where it
+stopped:
+
+```bash
+tail -40 ~/hypr-install.log
+```
