@@ -16,10 +16,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QPointF, QRectF
+from PySide6.QtCore import Qt, QPointF
 from PySide6.QtGui import (
-    QIcon, QPixmap, QPainter, QColor, QLinearGradient, QPainterPath, QBrush,
-    QPen, QPolygonF,
+    QIcon, QPixmap, QPainter, QColor, QLinearGradient, QBrush, QPen, QPolygonF,
 )
 
 # Brand
@@ -47,7 +46,6 @@ def _draw(size: int, state: str | None = None, *, mono: bool = False) -> QPixmap
 
     s = float(size)
     detail = size >= 64
-    mid = 32 <= size < 64
     tiny = size < 32
 
     # Geometry. Slightly smaller and higher when a state pip is present, so the

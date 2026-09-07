@@ -38,7 +38,7 @@ def make_icon() -> bool:
     sys.path.insert(0, str(APP_DIR))
     try:
         from PySide6.QtWidgets import QApplication
-        app = QApplication.instance() or QApplication([])
+        QApplication.instance() or QApplication([])
         from archvm import icons
         ok_ico = icons.write_ico(ICO)
         icons.write_png(PNG, 512)

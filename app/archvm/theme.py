@@ -12,7 +12,6 @@ not, and flat colour under high contrast.
 from __future__ import annotations
 
 import ctypes
-import math
 import random
 import sys
 from dataclasses import dataclass
@@ -293,7 +292,6 @@ def stylesheet(p: Palette, *, gradient: bool = True, translucent: bool = True,
         return f"{max(9, round(n * fs))}px"
 
     glass = "0.74" if (translucent and gradient) else "1.0"
-    rail = "0.66" if (translucent and gradient) else "1.0"
     bw = "2px" if hc else "1px"
 
     # A hairline highlight along the top of raised surfaces is what sells

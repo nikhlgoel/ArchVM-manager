@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal, QSize
-from PySide6.QtGui import QKeySequence, QShortcut, QTextCursor, QFont, QAction
+from PySide6.QtGui import QKeySequence, QShortcut, QTextCursor, QFont
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QComboBox, QSpinBox, QLineEdit, QPlainTextEdit, QTextEdit, QCheckBox,
@@ -17,10 +17,10 @@ from PySide6.QtWidgets import (
     QInputDialog, QApplication, QProgressBar, QFileDialog, QSlider, QFrame,
 )
 
-from . import hostinfo, icons, paths, qemu, theme
+from . import icons, paths, qemu, theme
 from .config import AppSettings, VMConfig, INSTALL_CMD
 from .widgets import (AlertBar, Backdrop, Card, Chip, MeterBar, Stat,
-                      StatusDot, Toast, a11y, button, elevate, hline)
+                      StatusDot, Toast, a11y, button, elevate)
 
 NAV_SECTIONS = [
     ("MACHINE", ["Overview", "Hardware"]),
@@ -115,8 +115,8 @@ class MainWindow(QMainWindow):
         Derives a name from the widget's own text, its form-row label, or its
         tooltip - whichever exists first.
         """
-        from PySide6.QtWidgets import (QAbstractButton, QComboBox, QSpinBox,
-                                       QLineEdit, QSlider, QAbstractSpinBox)
+        from PySide6.QtWidgets import (QAbstractButton, QComboBox, QLineEdit,
+                                       QSlider, QAbstractSpinBox)
         types = (QAbstractButton, QComboBox, QAbstractSpinBox, QLineEdit, QSlider)
         for w in self.findChildren(QWidget):
             if not isinstance(w, types) or w.accessibleName():

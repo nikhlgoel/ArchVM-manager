@@ -1,7 +1,7 @@
 """System tray icon with a full right-click menu, so the app can run headless."""
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QObject, QTimer
 from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 

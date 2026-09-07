@@ -9,8 +9,8 @@ from — a flat logo on a gradient reads as a loading screen, not a product.
 from __future__ import annotations
 
 from PySide6.QtCore import (Qt, QTimer, QRectF, QPointF, QPropertyAnimation,
-                            QEasingCurve, Property, Signal, QObject)
-from PySide6.QtGui import (QPainter, QColor, QPixmap, QFont, QPainterPath,
+                            QEasingCurve)
+from PySide6.QtGui import (QPainter, QColor, QFont, QPainterPath,
                            QLinearGradient, QTransform, QBrush, QPen)
 from PySide6.QtWidgets import QWidget, QApplication
 

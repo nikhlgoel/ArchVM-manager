@@ -8,19 +8,17 @@ with a plain-language summary of what the user still has to do.
 from __future__ import annotations
 
 import threading
-import time
-from pathlib import Path
 
 from PySide6.QtCore import Qt, QObject, Signal, QTimer, QSize
-from PySide6.QtGui import QFont, QPixmap
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QStackedWidget, QLineEdit, QSpinBox, QCheckBox, QFormLayout, QProgressBar,
-    QPlainTextEdit, QScrollArea, QFrame, QSizePolicy, QApplication, QMessageBox,
+    QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QStackedWidget,
+    QLineEdit, QSpinBox, QCheckBox, QFormLayout, QProgressBar, QPlainTextEdit,
+    QScrollArea, QMessageBox,
 )
 
 from . import deps, hostinfo, icons, paths, theme
-from .config import AppSettings, VMConfig, INSTALL_CMD
+from .config import AppSettings, VMConfig
 from .deps import Status
 from .widgets import Backdrop, Card, Chip, a11y, button, hline
 

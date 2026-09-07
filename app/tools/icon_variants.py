@@ -280,7 +280,7 @@ def sheet(dark_bg: bool) -> QPixmap:
 
 
 def main() -> int:
-    app = QApplication.instance() or QApplication([])
+    QApplication.instance() or QApplication([])
     OUT.mkdir(parents=True, exist_ok=True)
 
     for key, name, _desc, fn in VARIANTS:

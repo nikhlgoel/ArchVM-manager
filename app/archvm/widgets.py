@@ -1,8 +1,8 @@
 """Reusable widgets. Every one sets accessible names so screen readers work."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer, Signal, QRectF
-from PySide6.QtGui import QPainter, QColor, QBrush, QPen, QFont
+from PySide6.QtCore import Qt, QTimer, QRectF
+from PySide6.QtGui import QPainter, QColor, QBrush, QFont
 from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget,
     QGraphicsDropShadowEffect, QSizePolicy, QLayout,

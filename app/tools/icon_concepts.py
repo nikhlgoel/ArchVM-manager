@@ -21,8 +21,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PySide6.QtCore import Qt, QRectF, QPointF
 from PySide6.QtGui import (
-    QPixmap, QPainter, QColor, QLinearGradient, QRadialGradient, QPainterPath,
-    QBrush, QPen, QFont, QPolygonF,
+    QPixmap, QPainter, QColor, QLinearGradient, QPainterPath, QBrush, QPen,
+    QFont, QPolygonF,
 )
 from PySide6.QtWidgets import QApplication
 

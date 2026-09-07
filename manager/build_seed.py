@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Build seed.iso containing the install scripts, attached to the VM as a 2nd CD-ROM."""
-import io, os, re, sys, pathlib, pycdlib
+import io, re, pathlib, pycdlib
 
 BASE = pathlib.Path(__file__).resolve().parent.parent
 SEED = BASE / "seed"
