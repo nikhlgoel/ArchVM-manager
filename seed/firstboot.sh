@@ -132,13 +132,31 @@ fi
 sudo systemctl enable sddm
 sudo systemctl set-default graphical.target
 
+# Hand the login back to SDDM. This must happen before sudo is revoked below,
+# and only on success - if the desktop install failed we died long before here,
+# leaving autologin in place so the retry is one command away.
+echo "==> Removing the temporary tty1 autologin"
+sudo rm -f /etc/systemd/system/getty@tty1.service.d/autologin.conf
+sudo rmdir /etc/systemd/system/getty@tty1.service.d 2>/dev/null || true
+sudo systemctl daemon-reload || true
+
 echo "==> Revoking temporary passwordless sudo"
 sudo rm -f /etc/sudoers.d/99-firstboot-tmp
 
 touch "$HOME/.local/share/hypr-setup-done"
 echo
 echo "############################################################"
-echo "#  DONE. Reboot - SDDM will show a graphical login."
-echo "#  Pick the Hyprland session and sign in."
+echo "#  DONE - the desktop is installed."
+echo "#  Rebooting into the graphical login."
+echo "#  Sign in as $USER; the Hyprland session is preselected."
 echo "#  Re-run this script any time: ~/firstboot.sh"
 echo "############################################################"
+echo
+
+if [ "${AUTO_REBOOT:-yes}" = "yes" ]; then
+  echo "Rebooting in 10 seconds - press Ctrl-C to stay at this shell."
+  for i in $(seq 10 -1 1); do echo "   $i..."; sleep 1; done
+  sudo systemctl reboot || sudo reboot
+else
+  echo "Run 'sudo reboot' to reach the graphical login."
+fi

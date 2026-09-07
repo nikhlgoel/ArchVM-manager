@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "ArchVM"
-APP_VERSION = "2.1.1"
+APP_VERSION = "2.2.0"
 ORG_NAME = "ArchVM"
 
 

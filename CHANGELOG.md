@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] — 2026-09-07
+
+### Added
+
+- **The install is now genuinely unattended.** It used to stop after the base
+  system and print `umount -R /mnt && reboot` for you to type, then drop to a
+  bare TTY where the desktop build only started once you logged in, and finish
+  at a black console. Now: `bootstrap.sh` unmounts and powers the VM off, the
+  manager restarts it from the disk, that boot logs in on tty1 automatically
+  and builds the desktop, and it reboots into the SDDM greeter. Nothing to
+  type from pressing **Install Arch** to the login screen.
+  Set `AUTO_REBOOT=no` in `vm.conf` to stop between stages instead.
+- **The VM data location is selectable** from Settings → Locations → Change,
+  with a free-space check. Absolute paths in the configuration are repointed;
+  existing files are deliberately left in place rather than copied silently.
+
+### Fixed
+
+- **QEMU frequently showed "not responding"** during the install and on first
+  boot. Disk I/O was serviced by QEMU's main loop — the same loop that answers
+  Windows' window messages — so any burst of it made the window appear hung.
+  Block I/O now runs on a dedicated `iothread`.
+- The three-stage installer is powered off rather than rebooted at the end of
+  stage 1: in install mode the ISO still holds `bootindex=1`, so a reboot came
+  straight back into the live environment.
+
 ## [2.1.1] — 2026-09-07
 
 First public release. (2.1.0 was built but never published.)
@@ -62,4 +88,5 @@ First public release. (2.1.0 was built but never published.)
   README. The VM uses virgl for hardware-accelerated OpenGL instead.
 - Releases are unsigned, so SmartScreen warns on first run.
 
+[2.2.0]: https://github.com/nikhlgoel/ArchVM-manager/releases/tag/v2.2.0
 [2.1.1]: https://github.com/nikhlgoel/ArchVM-manager/releases/tag/v2.1.1

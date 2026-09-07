@@ -126,10 +126,15 @@ cd app
 python build.py            # -> dist/ArchVM/ArchVM.exe
 ```
 
-The application looks for its VM data directory in this order: the `ARCHVM_ROOT`
-environment variable, a path saved in settings, `D:\ArchVM`, then the repository
-root. Set `ARCHVM_ROOT` to control where disks and ISOs are written — they are
-large and deliberately excluded from version control.
+### Where the VM data lives
+
+Disks and ISOs are large, so you choose where they go: **Settings → Locations →
+Change**. The app repoints its configuration and restarts. Existing files are
+left where they are rather than silently copied — a virtual disk can be a
+hundred gigabytes — so move them across yourself if you want to keep them.
+
+The lookup order is the `ARCHVM_ROOT` environment variable, the path saved in
+settings, `D:\ArchVM`, then the repository root.
 
 ---
 

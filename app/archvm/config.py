@@ -159,10 +159,16 @@ class VMConfig(_Base):
         if Path(self.ovmf_vars).exists():
             a += ["-drive", f"if=pflash,format=raw,file={self.ovmf_vars}"]
 
+        # Disk I/O runs on its own thread. Without this every read and write is
+        # serviced by QEMU's main loop - the same loop that pumps the window's
+        # messages - so a burst of I/O (pacstrap, the first desktop build) stops
+        # the window answering Windows and it is declared "not responding".
         a += [
+            "-object", "iothread,id=io0",
             "-drive", f"id=hd0,if=none,file={self.disk},format=qcow2,"
-                      f"cache=writeback,discard=unmap",
-            "-device", f"virtio-blk-pci,drive=hd0,bootindex={2 if install_mode else 1}",
+                      f"cache=writeback,aio=threads,discard=unmap",
+            "-device", f"virtio-blk-pci,drive=hd0,iothread=io0,"
+                       f"bootindex={2 if install_mode else 1}",
         ]
 
         if install_mode:

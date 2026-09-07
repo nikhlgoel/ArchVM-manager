@@ -641,6 +641,10 @@ class Onboarding(QDialog):
         vals["KEYMAP"] = self.host.console_keymap
         vals.setdefault("FORK_REPO", "https://github.com/pctrade/end4-pc.git")
         vals.setdefault("FORK_NAME", "end4-pC")
+        # Drives the unattended chain: bootstrap powers the VM off by
+        # itself, and the desktop install reboots into the greeter when
+        # it finishes.
+        vals.setdefault("AUTO_REBOOT", "yes")
         body = "# written by ArchVM setup\n" + "".join(f"{k}={v}\n" for k, v in vals.items())
         try:
             paths.SEED_DIR.mkdir(parents=True, exist_ok=True)

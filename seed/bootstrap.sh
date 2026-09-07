@@ -63,7 +63,25 @@ arch-chroot /mnt bash /root/seed/chroot-setup.sh
 echo
 echo "============================================================"
 echo " Base install DONE."
-echo " Run:  umount -R /mnt && reboot"
-echo " Then log in as '$USERNAME' - the desktop install runs"
-echo " automatically on first login."
 echo "============================================================"
+
+# Unmount and power off rather than reboot. In install mode the ISO is still
+# bootindex=1, so a reboot would come straight back into the live environment;
+# the manager notices the shutdown and restarts the VM from the disk.
+#
+# The next boot logs $USERNAME in on tty1 automatically and runs the desktop
+# install, then reboots once more into the SDDM greeter. Nothing to type.
+echo "==> Unmounting"
+sync
+umount -R /mnt || { echo "   busy - retrying lazily"; umount -Rl /mnt || true; }
+
+if [ "${AUTO_REBOOT:-yes}" = "yes" ]; then
+  echo
+  echo "Powering off in 10 seconds. The desktop install continues by itself"
+  echo "on the next boot - press Ctrl-C now to stay in the live environment."
+  for i in $(seq 10 -1 1); do echo "   $i..."; sleep 1; done
+  echo
+  systemctl poweroff || poweroff
+else
+  echo " Run:  poweroff     (then start the VM again from the manager)"
+fi

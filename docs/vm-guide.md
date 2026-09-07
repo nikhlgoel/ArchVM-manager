@@ -39,6 +39,32 @@ QEMU has **no host↔guest clipboard**. Two ways in, both built into the manager
 
 ---
 
+## What the install does on its own
+
+Once you press **Install Arch**, nothing else needs typing:
+
+1. The VM boots the Arch ISO and the installer command is typed in for you.
+2. `bootstrap.sh` partitions, `pacstrap`s the base system and configures it.
+3. It unmounts and **powers the VM off** - not reboots, because the ISO is
+   still first in the boot order at that point.
+4. The manager notices and **restarts the VM from the disk**.
+5. That boot **logs you in on tty1 automatically** and builds the Hyprland
+   desktop. This is the long part.
+6. When it finishes it removes the autologin and **reboots into SDDM**, the
+   graphical login.
+
+You end at a greeter with the Hyprland session selected. Sign in with the
+password you set in the wizard.
+
+If a step fails the chain stops at a shell with the error on screen, autologin
+still in place, and `~/firstboot.sh` ready to re-run. The log is at
+`~/hypr-install.log`.
+
+To keep the old behaviour - stopping after each stage so you can look around -
+set `AUTO_REBOOT=no` in `seed/vm.conf` and rebuild the seed ISO.
+
+---
+
 ## First run
 
 1. Open **ArchVM Manager**.

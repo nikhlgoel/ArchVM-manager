@@ -8,7 +8,7 @@ import sys
 import time
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Signal, QSize
+from PySide6.QtCore import Qt, QTimer, Signal, QSize, QProcess
 from PySide6.QtGui import QKeySequence, QShortcut, QTextCursor, QFont
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -21,6 +21,15 @@ from . import icons, paths, qemu, theme
 from .config import AppSettings, VMConfig, INSTALL_CMD
 from .widgets import (AlertBar, Backdrop, Card, Chip, MeterBar, Stat,
                       StatusDot, Toast, a11y, button, elevate)
+
+def _within(path: Path, root: Path) -> bool:
+    """True when `path` sits inside `root`. Never raises on odd drives."""
+    try:
+        path.relative_to(root)
+        return True
+    except (ValueError, OSError):
+        return False
+
 
 NAV_SECTIONS = [
     ("MACHINE", ["Overview", "Hardware"]),
@@ -39,6 +48,9 @@ class MainWindow(QMainWindow):
         self.settings = settings
         self.runner = qemu.VMRunner(self)
         self.monitor = qemu.MonitorClient(cfg.monitor_port, self)
+        # True between starting a guided install and the VM powering off
+        # at the end of it, so the installed system can be booted for you.
+        self._await_first_boot = False
         self._force_quit = False
         self._vm_started_at: float | None = None
         self._installed_cache = False
@@ -670,11 +682,18 @@ class MainWindow(QMainWindow):
         cb_.add(fb)
         v.addWidget(cb_)
 
-        cl = Card("Locations")
+        cl = Card("Locations",
+                  "Disks and ISOs are large. Put them on a drive with room.")
         fl = QFormLayout(); fl.setSpacing(10)
+
+        rootrow = QHBoxLayout(); rootrow.setSpacing(8)
         self.lbl_root = QLabel(str(paths.ROOT)); self.lbl_root.setObjectName("CardHint")
         self.lbl_root.setWordWrap(True)
-        fl.addRow("VM data", self.lbl_root)
+        b_root = button("Change…")
+        b_root.setToolTip("Choose where virtual disks, ISOs and seed files are kept")
+        b_root.clicked.connect(self._choose_vm_root)
+        rootrow.addWidget(self.lbl_root, 1); rootrow.addWidget(b_root)
+        fl.addRow("VM data", rootrow)
         lq = QLabel(str(paths.QEMU_DIR) + ("" if paths.qemu_available() else "   (NOT FOUND)"))
         lq.setObjectName("CardHint"); lq.setWordWrap(True)
         fl.addRow("QEMU", lq)
@@ -729,7 +748,7 @@ class MainWindow(QMainWindow):
 
         self.runner.output.connect(self._log)
         self.runner.failed.connect(self._error)
-        self.runner.state_changed.connect(lambda _s: self._refresh())
+        self.runner.state_changed.connect(self._on_vm_state)
 
         self.monitor.finished.connect(self._send_done)
         self.monitor.progress.connect(self._send_progress)
@@ -865,6 +884,114 @@ class MainWindow(QMainWindow):
             self._log("[app] " + self.runner.last_command())
         self._refresh()
 
+    def _on_vm_state(self, state: str) -> None:
+        """
+        React to the VM starting or stopping.
+
+        bootstrap.sh powers the machine off rather than rebooting, because in
+        install mode the ISO still holds bootindex=1 and a reboot would land
+        back in the live environment. So a clean stop straight after an install
+        run means the base system is on disk and wants booting from it - do
+        that automatically rather than making the user work out why the VM
+        vanished.
+        """
+        self._refresh()
+        if state != "stopped" or not self._await_first_boot:
+            return
+        self._await_first_boot = False
+        self._log("[app] install run finished; booting the installed system")
+        self.toast.show_message(
+            "Base install finished. Starting the VM from the disk - the "
+            "desktop installs itself on this boot, then reboots into the "
+            "login screen.", 0)
+        QTimer.singleShot(2500, lambda: self._start(False))
+
+    def _choose_vm_root(self) -> None:
+        """
+        Move where disks, ISOs and seed files live.
+
+        The paths in vm.json are absolute, so they do not follow the root on
+        their own - anything that pointed inside the old location is repointed
+        here. Existing files are deliberately NOT moved: a virtual disk can be
+        a hundred gigabytes, and silently copying that in the background is
+        worse than telling you plainly where it still is.
+        """
+        old = Path(paths.ROOT)
+        picked = QFileDialog.getExistingDirectory(
+            self, "Choose where to keep VM disks and ISOs", str(old))
+        if not picked:
+            return
+        new = Path(picked)
+        if new == old:
+            return
+
+        try:
+            new.mkdir(parents=True, exist_ok=True)
+            probe = new / ".archvm-write-test"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink()
+        except OSError as e:
+            self._error("That folder is not writable:\n%s" % e)
+            return
+
+        from . import deps
+        free = deps.free_gb(new)
+        stays = [Path(p) for p in (self.cfg.disk, self.cfg.iso, self.cfg.seed_iso,
+                                   self.cfg.ovmf_code, self.cfg.ovmf_vars)
+                 if p and Path(p).exists() and _within(Path(p), old)]
+
+        lines = ["Use this folder for VM data?", "", str(new), "",
+                 "Free space: %.0f GB%s" % (
+                     free, "" if free >= 60 else "   - below the 60 GB minimum")]
+        if stays:
+            lines += ["",
+                      "%d existing file(s) stay in %s." % (len(stays), old),
+                      "They are not copied. Move them across yourself to keep "
+                      "them, or the setup wizard will create new ones here."]
+        lines += ["", "ArchVM restarts to apply this."]
+
+        if QMessageBox.question(
+                self, "Change VM data location", "\n".join(lines),
+                QMessageBox.Yes | QMessageBox.Cancel) != QMessageBox.Yes:
+            return
+
+        # Repoint anything that lived under the old root.
+        for attr in ("disk", "iso", "seed_iso", "ovmf_code", "ovmf_vars"):
+            cur = getattr(self.cfg, attr, "")
+            if cur and _within(Path(cur), old):
+                setattr(self.cfg, attr, str(new / Path(cur).relative_to(old)))
+        self.cfg.save()
+
+        self.settings.vm_root = str(new)
+        self.settings.save()
+        self.lbl_root.setText(str(new))
+
+        if self.runner.is_running():
+            self.toast.show_message(
+                "Saved. Shut the VM down and restart ArchVM to use the new "
+                "location.", 0)
+            return
+        self._restart_app()
+
+    def _restart_app(self) -> None:
+        """Relaunch, because paths are resolved once at import time."""
+        if QMessageBox.question(
+                self, paths.APP_NAME, "Restart ArchVM now?",
+                QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+            self.toast.show_message(
+                "The new location applies next time you start ArchVM.", 0)
+            return
+        try:
+            if paths.is_frozen():
+                QProcess.startDetached(sys.executable, [])
+            else:
+                launcher = Path(__file__).resolve().parent.parent / "run.py"
+                QProcess.startDetached(sys.executable, [str(launcher)])
+        except Exception:
+            pass
+        self._force_quit = True
+        QApplication.instance().quit()
+
     def _start_install_flow(self) -> None:
         """
         Boot the installer and type the install command once the live ISO has
@@ -878,6 +1005,8 @@ class MainWindow(QMainWindow):
         self._start(True)
         if not self.runner.is_running():
             return
+        # bootstrap.sh powers off when it is done; _on_vm_state picks it up
+        self._await_first_boot = True
         self._go(0)
         self._boot_wait = 45
         self.toast.show_message(
@@ -1012,6 +1141,7 @@ class MainWindow(QMainWindow):
         vals.setdefault("KEYMAP", "us")
         vals.setdefault("FORK_REPO", "https://github.com/pctrade/end4-pc.git")
         vals.setdefault("FORK_NAME", "end4-pC")
+        vals.setdefault("AUTO_REBOOT", "yes")
         body = "# regenerated by ArchVM\n" + "".join(f"{k}={v}\n" for k, v in vals.items())
         try:
             (paths.SEED_DIR / "vm.conf").write_bytes(body.encode("utf-8"))  # LF only

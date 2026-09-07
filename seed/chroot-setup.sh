@@ -112,4 +112,17 @@ fi
 EOF
 chown "$USERNAME:$USERNAME" "/home/$USERNAME/.bash_profile"
 
+# Log the user in on tty1 automatically for the next boot only. The desktop
+# install is long and unattended; making someone type a password first, at a
+# bare TTY, to reach a script that runs by itself is friction for no gain.
+# firstboot.sh removes this drop-in when it finishes, so the permanent login
+# is SDDM's graphical greeter.
+echo "==> Temporary autologin on tty1 (removed after the desktop install)"
+mkdir -p /etc/systemd/system/getty@tty1.service.d
+cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf <<EOF
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty -o '-p -f -- \u' --noclear --autologin $USERNAME %I \$TERM
+EOF
+
 echo "==> Stage 2 complete"

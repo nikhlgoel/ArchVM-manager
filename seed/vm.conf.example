@@ -9,3 +9,4 @@ KEYMAP=us
 FORK_REPO=https://github.com/pctrade/end4-pc.git
 FORK_NAME=end4-pC
 AUTO_CONFIRM=no
+AUTO_REBOOT=yes
