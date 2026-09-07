@@ -1,29 +1,41 @@
 """
-Application iconography, drawn with QPainter so it stays crisp at every size
-and needs no external image files.
+Application iconography.
 
-The mark: a rounded-square "chip" with a blue->violet gradient, a white Arch
-chevron, and a small status pip. Tray variants recolour the pip so VM state is
-readable at 16px.
+The mark is an isometric block: a Hyprland tiling split drawn across the top
+face, a dark-aqua left face and a blue-to-violet right face. It is drawn with
+QPainter rather than shipped as bitmaps so it stays sharp at every size, and
+because the detail has to *change* with size — the split lines that make it
+legible at 128px turn to mud at 16px.
+
+Level of detail:
+  >= 64 px   contact shadow, tiling split, hairline highlights
+  32-63 px   block plus a single split line
+  <  32 px   solid faces only, contrast pushed up
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QRectF, QPointF, QSize
+from PySide6.QtCore import Qt, QPointF, QRectF
 from PySide6.QtGui import (
-    QIcon, QPixmap, QPainter, QColor, QLinearGradient, QPainterPath, QBrush, QPen,
+    QIcon, QPixmap, QPainter, QColor, QLinearGradient, QPainterPath, QBrush,
+    QPen, QPolygonF,
 )
 
-GRAD_TOP = "#5b8cff"
-GRAD_BOT = "#8b5cf6"
+# Brand
+AQUA = "#17b8c4"
+AQUA_DEEP = "#0b5566"
+AQUA_DARK = "#083f4d"
+BLUE = "#4f86ff"
+BLUE_DEEP = "#2f5fd0"
+VIOLET = "#8b5cf6"
+VIOLET_DEEP = "#3a2a7a"
 
 STATE_COLORS = {
     "stopped": "#8b93ad",
-    "running": "#34d399",
-    "busy": "#fbbf24",
-    "error": "#f87171",
-    None: None,
+    "running": "#22c55e",
+    "busy": "#f5a524",
+    "error": "#ef4444",
 }
 
 
@@ -34,62 +46,112 @@ def _draw(size: int, state: str | None = None, *, mono: bool = False) -> QPixmap
     p.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
 
     s = float(size)
-    margin = s * 0.055
-    body = QRectF(margin, margin, s - margin * 2, s - margin * 2)
-    radius = s * 0.235
+    detail = size >= 64
+    mid = 32 <= size < 64
+    tiny = size < 32
 
-    # chip body
-    path = QPainterPath()
-    path.addRoundedRect(body, radius, radius)
+    # Geometry. Slightly smaller and higher when a state pip is present, so the
+    # pip has somewhere to sit without overlapping the block.
+    pip = bool(state) and size >= 20
+    scale = 0.90 if pip else 1.0
+    cx = s * (0.48 if pip else 0.5)
+    cy = s * (0.48 if pip else 0.50)
+    w = s * 0.415 * scale          # half-width of the top rhombus
+    hh = s * 0.215 * scale         # half-height of the top rhombus
+    d = s * 0.255 * scale          # body depth
+
+    top = QPolygonF([QPointF(cx, cy - hh), QPointF(cx + w, cy),
+                     QPointF(cx, cy + hh), QPointF(cx - w, cy)])
+    left = QPolygonF([QPointF(cx - w, cy), QPointF(cx, cy + hh),
+                      QPointF(cx, cy + hh + d), QPointF(cx - w, cy + d)])
+    right = QPolygonF([QPointF(cx + w, cy), QPointF(cx, cy + hh),
+                       QPointF(cx, cy + hh + d), QPointF(cx + w, cy + d)])
+
+    # ---- contact shadow, so the block sits on something ----
+    if detail and not mono:
+        p.setPen(Qt.NoPen)
+        p.setBrush(QBrush(QColor(11, 34, 51, 46)))
+        p.drawEllipse(QPointF(cx, cy + hh + d + s * 0.045),
+                      w * 0.86, hh * 0.34)
+
+    p.setPen(Qt.NoPen)
+
     if mono:
-        p.fillPath(path, QBrush(QColor("#ffffff")))
-    else:
-        g = QLinearGradient(body.topLeft(), body.bottomRight())
-        g.setColorAt(0.0, QColor(GRAD_TOP))
-        g.setColorAt(1.0, QColor(GRAD_BOT))
-        p.fillPath(path, QBrush(g))
+        p.setBrush(QBrush(QColor("#ffffff")))
+        p.drawPolygon(left)
+        p.drawPolygon(right)
+        p.drawPolygon(top)
+        p.setPen(QPen(QColor(0, 0, 0, 190), max(1.0, s * 0.022)))
+        p.drawLine(QPointF(cx - w, cy), QPointF(cx, cy + hh))
+        p.drawLine(QPointF(cx + w, cy), QPointF(cx, cy + hh))
+        p.drawLine(QPointF(cx, cy + hh), QPointF(cx, cy + hh + d))
+        p.end()
+        return pm
 
-        # subtle top sheen
-        sheen = QLinearGradient(body.topLeft(), QPointF(body.left(), body.center().y()))
-        sheen.setColorAt(0.0, QColor(255, 255, 255, 54))
-        sheen.setColorAt(1.0, QColor(255, 255, 255, 0))
-        p.fillPath(path, QBrush(sheen))
+    # ---- left face: dark aqua, the accent that grounds the whole mark ----
+    gl = QLinearGradient(QPointF(cx - w, cy), QPointF(cx, cy + hh + d))
+    gl.setColorAt(0.0, QColor(AQUA_DEEP))
+    gl.setColorAt(1.0, QColor(AQUA_DARK if not tiny else AQUA_DEEP))
+    p.setBrush(QBrush(gl))
+    p.drawPolygon(left)
 
-        # hairline
-        p.setPen(QPen(QColor(255, 255, 255, 46), max(1.0, s * 0.012)))
-        p.setBrush(Qt.NoBrush)
-        p.drawRoundedRect(body, radius, radius)
+    # ---- right face ----
+    gr = QLinearGradient(QPointF(cx, cy + hh), QPointF(cx + w, cy + d))
+    gr.setColorAt(0.0, QColor(BLUE_DEEP))
+    gr.setColorAt(1.0, QColor(VIOLET_DEEP))
+    p.setBrush(QBrush(gr))
+    p.drawPolygon(right)
 
-    # Arch chevron
-    cx = s * 0.5
-    top = s * 0.235
-    bot = s * 0.745
-    half = s * 0.225
-    notch = s * 0.115
+    # ---- top face ----
+    gt = QLinearGradient(QPointF(cx - w, cy + hh), QPointF(cx + w, cy - hh))
+    gt.setColorAt(0.0, QColor(AQUA))
+    gt.setColorAt(0.48, QColor(BLUE))
+    gt.setColorAt(1.0, QColor(VIOLET))
+    p.setBrush(QBrush(gt))
+    p.drawPolygon(top)
 
-    chev = QPainterPath()
-    chev.moveTo(cx, top)
-    chev.lineTo(cx + half, bot)
-    chev.lineTo(cx + half * 0.46, bot)
-    chev.lineTo(cx, bot - notch * 1.5)
-    chev.lineTo(cx - half * 0.46, bot)
-    chev.lineTo(cx - half, bot)
-    chev.closeSubpath()
-    p.fillPath(chev, QBrush(QColor("#0d1020" if mono else "#ffffff")))
+    # ---- tiling split across the top face ----
+    # One vertical gutter with a branch: a master pane on the left, two stacked
+    # on the right. In isometric the axes run along the rhombus edges.
+    if not tiny:
+        lw = max(1.0, s * (0.026 if detail else 0.030))
+        p.setPen(QPen(QColor(255, 255, 255, 205 if detail else 225), lw,
+                      Qt.SolidLine, Qt.RoundCap))
 
-    # state pip
-    col = STATE_COLORS.get(state)
-    if col and size >= 20:
-        d = s * 0.30
-        pip = QRectF(s - d - margin * 0.6, s - d - margin * 0.6, d, d)
-        p.setPen(QPen(QColor(13, 16, 32, 210), max(1.0, s * 0.028)))
-        p.setBrush(QBrush(QColor(col)))
-        p.drawEllipse(pip)
+        def iso(u: float, v: float) -> QPointF:
+            """u across the width (-1..1), v along the depth (-1..1)."""
+            return QPointF(cx + (u + v) * w * 0.5,
+                           cy + (v - u) * hh * 0.5)
+
+        # main gutter, front-left to back-right
+        p.drawLine(iso(-0.08, -0.92), iso(-0.08, 0.92))
+        if detail:
+            # branch splitting the right side into two panes
+            p.drawLine(iso(-0.08, 0.12), iso(0.92, 0.12))
+
+    # ---- edge definition ----
+    if not tiny:
+        p.setPen(QPen(QColor(255, 255, 255, 96), max(1.0, s * 0.016)))
+        p.drawLine(QPointF(cx - w, cy), QPointF(cx, cy - hh))
+        p.drawLine(QPointF(cx, cy - hh), QPointF(cx + w, cy))
+    # front vertical seam keeps the two side faces apart at any size
+    p.setPen(QPen(QColor(0, 0, 0, 70), max(1.0, s * 0.018)))
+    p.drawLine(QPointF(cx, cy + hh), QPointF(cx, cy + hh + d))
+
+    # ---- state pip ----
+    colour = STATE_COLORS.get(state or "")
+    if colour and pip:
+        r = s * 0.155
+        c = QPointF(s - r - s * 0.055, s - r - s * 0.055)
+        p.setPen(QPen(QColor(255, 255, 255, 230), max(1.0, s * 0.030)))
+        p.setBrush(QBrush(QColor(colour)))
+        p.drawEllipse(c, r, r)
 
     p.end()
     return pm
 
 
+# --------------------------------------------------------------------------- #
 def app_icon() -> QIcon:
     ic = QIcon()
     for n in (16, 20, 24, 32, 40, 48, 64, 96, 128, 256):
@@ -104,8 +166,12 @@ def tray_icon(state: str = "stopped") -> QIcon:
     return ic
 
 
-def _png_bytes(pm) -> bytes:
-    """QPixmap -> PNG bytes, without touching the filesystem."""
+def mark(size: int = 256) -> QPixmap:
+    """The plain mark, for the splash and documentation."""
+    return _draw(size)
+
+
+def _png_bytes(pm: QPixmap) -> bytes:
     from PySide6.QtCore import QBuffer, QByteArray
     ba = QByteArray()
     buf = QBuffer(ba)
@@ -116,10 +182,7 @@ def _png_bytes(pm) -> bytes:
 
 
 def write_ico(dest: Path, sizes=(16, 24, 32, 48, 64, 128, 256)) -> bool:
-    """
-    Write a multi-resolution .ico for the executable and shortcuts.
-    Uses Pillow when available; falls back to Qt's single-size writer.
-    """
+    """Multi-resolution .ico for the executable and shortcuts."""
     try:
         dest.parent.mkdir(parents=True, exist_ok=True)
     except OSError:
