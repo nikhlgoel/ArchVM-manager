@@ -96,12 +96,37 @@ class VMConfig(_Base):
         self.ovmf_vars = self.ovmf_vars or str(paths.DISK_DIR / "OVMF_VARS.fd")
 
     @classmethod
-    def load(cls) -> "VMConfig":
+    def load(cls, apply_host_defaults: bool = True) -> "VMConfig":
         data = _load_json(paths.VM_CONFIG_FILE)
-        if not data:
-            # migrate from the old manager location
+        fresh = not data
+        if fresh:
+            # migrate from the old manager location before giving up
             data = _load_json(paths.LEGACY_VM_CONFIG)
-        return cls._from_dict(data)
+            fresh = not data
+        cfg = cls._from_dict(data)
+        if fresh and apply_host_defaults:
+            cfg.apply_host_defaults()
+        return cfg
+
+    def apply_host_defaults(self) -> list[str]:
+        """
+        Seed the configuration from the user's Windows setup: display size,
+        keyboard layout, and a memory/CPU split that leaves Windows usable.
+        Returns the human-readable notes so the UI can show what it picked.
+        """
+        try:
+            from . import hostinfo
+            h = hostinfo.cached()
+        except Exception:
+            return []
+        self.width = h.display.width
+        self.height = h.display.height
+        self.memory_mb = h.suggested_memory_mb
+        self.cpus = h.suggested_cpus
+        self.keymap = h.qemu_keymap
+        self.username = h.username
+        self.audio = h.has_audio
+        return list(h.detected)
 
     def save(self) -> bool:
         return _save_json(paths.VM_CONFIG_FILE, self.to_dict())
@@ -179,8 +204,8 @@ class VMConfig(_Base):
 # --------------------------------------------------------------------------- #
 @dataclass
 class AppSettings(_Base):
-    theme: str = "auto"              # auto | dark | light
-    accent: str = "#4f8cff"
+    theme: str = "light"             # light | dark | auto
+    accent: str = "#3b74e8"
     translucency: bool = True
     gradient: bool = True
     minimise_to_tray: bool = True
@@ -195,6 +220,7 @@ class AppSettings(_Base):
     window_w: int = 1180
     window_h: int = 800
     setup_done: bool = False
+    follow_windows_accent: bool = False
 
     @classmethod
     def load(cls) -> "AppSettings":

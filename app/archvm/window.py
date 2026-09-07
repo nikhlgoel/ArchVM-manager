@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal, QSize
@@ -16,9 +17,10 @@ from PySide6.QtWidgets import (
     QInputDialog, QApplication, QProgressBar, QFileDialog, QSlider,
 )
 
-from . import icons, paths, qemu, theme
+from . import hostinfo, icons, paths, qemu, theme
 from .config import AppSettings, VMConfig, INSTALL_CMD
-from .widgets import Card, Stat, StatusDot, Toast, a11y, button, hline
+from .widgets import (Backdrop, Card, Chip, MeterBar, Stat, StatusDot, Toast,
+                      a11y, button, elevate, hline)
 
 PAGES = ["Overview", "Hardware", "Guest", "Tools", "Settings", "Logs"]
 
@@ -33,6 +35,9 @@ class MainWindow(QMainWindow):
         self.runner = qemu.VMRunner(self)
         self.monitor = qemu.MonitorClient(cfg.monitor_port, self)
         self._force_quit = False
+        self._vm_started_at: float | None = None
+        self._installed_cache = False
+        self._tick = 0
 
         self.setWindowTitle(f"{paths.APP_NAME} — Arch Linux + Hyprland")
         self.setWindowIcon(icons.app_icon())
@@ -53,9 +58,16 @@ class MainWindow(QMainWindow):
     #  Construction
     # ------------------------------------------------------------------ #
     def _build(self) -> None:
-        root = QWidget()
+        pal = theme.resolve(self.settings.theme)
+        self.backdrop = Backdrop(pal)
+        self.setCentralWidget(self.backdrop)
+
+        root = QWidget(self.backdrop)
         root.setObjectName("Root")
-        self.setCentralWidget(root)
+        outer = QVBoxLayout(self.backdrop)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(root)
+
         h = QHBoxLayout(root)
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(0)
@@ -199,37 +211,80 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------ #
     def _page_overview(self) -> QWidget:
-        page, v = self._page("Overview", "Arch Linux with Hyprland, illogical-impulse and end4-pC")
+        page, v = self._page(
+            "Overview",
+            "Arch Linux with Hyprland, illogical-impulse and the end4-pC shell")
 
+        # ---- hero: the single next action, whatever that currently is ----
+        self.hero = Card()
+        self.hero.setObjectName("Hero")
+        hrow = QHBoxLayout()
+        hcol = QVBoxLayout()
+        hcol.setSpacing(5)
+        self.hero_title = QLabel("Ready to install")
+        self.hero_title.setObjectName("CardTitle")
+        f = QFont(); f.setPointSize(15); f.setBold(True)
+        self.hero_title.setFont(f)
+        self.hero_body = QLabel("")
+        self.hero_body.setObjectName("CardHint")
+        self.hero_body.setWordWrap(True)
+        hcol.addWidget(self.hero_title)
+        hcol.addWidget(self.hero_body)
+        hrow.addLayout(hcol, 1)
+        self.hero_chip = Chip("")
+        hrow.addWidget(self.hero_chip, 0, Qt.AlignTop)
+        self.hero.add(hrow)
+
+        arow = QHBoxLayout()
+        arow.setSpacing(9)
+        self.btn_primary = button("Install Arch", primary=True,
+                                  tip="Boot the installer and set everything up (Ctrl+I)")
+        self.btn_primary.clicked.connect(self._primary_action)
+        self.btn_start = button("Start VM", tip="Boot from the virtual disk (Ctrl+R)")
+        self.btn_start.clicked.connect(lambda: self._start(False))
+        self.btn_install = button("Reinstall…", tip="Boot the Arch installer again")
+        self.btn_install.clicked.connect(lambda: self._start(True))
+        self.btn_shutdown = button("Shut down", tip="Ask the guest to power off cleanly")
+        self.btn_shutdown.clicked.connect(self._shutdown)
+        self.btn_stop = button("Force stop", danger=True, tip="Kill QEMU immediately")
+        self.btn_stop.clicked.connect(self._force_stop)
+        for b in (self.btn_primary, self.btn_start, self.btn_install,
+                  self.btn_shutdown, self.btn_stop):
+            arow.addWidget(b)
+        arow.addStretch()
+        self.hero.add(arow)
+        v.addWidget(self.hero)
+
+        # ---- stats ----
         c = Card()
         row = QHBoxLayout()
-        row.setSpacing(30)
+        row.setSpacing(28)
         self.stats = {k: Stat(lbl) for k, lbl in
                       (("mem", "Memory"), ("cpu", "vCPUs"),
-                       ("res", "Resolution"), ("disk", "Disk"))}
-        for s in self.stats.values():
-            row.addWidget(s)
+                       ("res", "Resolution"), ("disk", "Disk"),
+                       ("uptime", "Uptime"))}
+        for st in self.stats.values():
+            row.addWidget(st)
         row.addStretch()
         c.add(row)
         v.addWidget(c)
 
-        cp = Card("Power")
-        r = QHBoxLayout()
-        r.setSpacing(10)
-        self.btn_start = button("Start VM", primary=True, tip="Boot from the virtual disk (Ctrl+R)")
-        self.btn_install = button("Install Arch", tip="Boot the Arch ISO and run the automated installer (Ctrl+I)")
-        self.btn_shutdown = button("Shut down", tip="Ask the guest to power off cleanly (ACPI)")
-        self.btn_stop = button("Force stop", danger=True, tip="Kill QEMU immediately")
-        for b in (self.btn_start, self.btn_install, self.btn_shutdown, self.btn_stop):
-            r.addWidget(b)
-        r.addStretch()
-        cp.add(r)
-        v.addWidget(cp)
+        # ---- host load, so it is obvious what the VM costs Windows ----
+        pal = theme.resolve(self.settings.theme)
+        cm = Card("Host load", "What the VM is currently costing Windows.")
+        self.meters = {
+            "ram": MeterBar("System memory", pal),
+            "disk": MeterBar("Free space on the VM drive", pal),
+        }
+        for m in self.meters.values():
+            cm.add(m)
+        v.addWidget(cm)
 
+        # ---- installer helper ----
         self.cmd_card = Card(
             "Installer waiting for input",
-            "The live ISO boots to a root prompt. Press the button and the app will "
-            "type this in for you.")
+            "The live ISO boots to a root prompt. The app types this in for you; "
+            "use the button if it needs sending again.")
         lbl = QLabel(INSTALL_CMD)
         lbl.setObjectName("Cmd")
         lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -240,22 +295,73 @@ class MainWindow(QMainWindow):
         bt.clicked.connect(lambda: self._send(INSTALL_CMD + "\n"))
         bc = button("Copy")
         bc.clicked.connect(lambda: self._copy(INSTALL_CMD))
-        rr.addWidget(bt)
-        rr.addWidget(bc)
-        rr.addStretch()
+        rr.addWidget(bt); rr.addWidget(bc); rr.addStretch()
         self.cmd_card.add(rr)
         v.addWidget(self.cmd_card)
 
         v.addWidget(Card(
             "About GPU acceleration",
-            "Your RTX 3050 cannot be passed through. Hyper-V DDA is Windows Server "
-            "only, QEMU on Windows runs on WHPX which has no VFIO, and the 3050 is a "
-            "muxless laptop GPU with no independent display path. The VM uses "
-            "virtio-gpu with virgl instead — hardware-accelerated OpenGL through the "
-            "host, smooth for Hyprland but not RTX-class. Bare metal is the only "
-            "route to the real GPU."))
+            "A discrete GPU cannot be passed through on a Windows host: Hyper-V DDA "
+            "is Windows Server only, QEMU on Windows runs on WHPX which has no VFIO, "
+            "and laptop dGPUs are muxless with no independent display path. The VM "
+            "uses virtio-gpu with virgl — hardware-accelerated OpenGL through the "
+            "host. Smooth for Hyprland, but not the same as bare metal."))
         v.addStretch()
         return page
+
+    # ------------------------------------------------------------------ #
+    def _guest_installed(self) -> bool:
+        """
+        Heuristic: a fresh qcow2 is a few MB. Anything past a gigabyte means a
+        real system was written, which is enough to decide what to offer.
+        """
+        try:
+            import re
+            txt = qemu.qemu_img("info", self.cfg.disk)
+            m = re.search(r"disk size: ([\d.]+) ([KMGT])iB", txt)
+            if not m:
+                return False
+            val, unit = float(m.group(1)), m.group(2)
+            gb = val * {"K": 1 / 1048576, "M": 1 / 1024, "G": 1, "T": 1024}[unit]
+            return gb > 1.5
+        except Exception:
+            return False
+
+    def _primary_action(self) -> None:
+        if self._guest_installed():
+            self._start(False)
+        else:
+            self._start_install_flow()
+
+    def _refresh_hero(self) -> None:
+        running = self.runner.is_running()
+        installed = self._installed_cache
+        if running and self.runner.install_mode:
+            self.hero_title.setText("Installing Arch")
+            self.hero_body.setText(
+                "The base system takes about 15 minutes. When it finishes, stop the "
+                "VM and press Start so it boots from disk instead of the ISO.")
+            self.hero_chip.setText("INSTALLING")
+        elif running:
+            self.hero_title.setText("Arch is running")
+            self.hero_body.setText(
+                "Press Super to open the launcher, Super + / for every keybind. "
+                "Shut down from the guest rather than force-stopping when you can.")
+            self.hero_chip.setText("RUNNING")
+        elif installed:
+            self.hero_title.setText("Arch is installed")
+            self.hero_body.setText(
+                "Press Start VM to boot it. The desktop build runs on first login "
+                "and can take 30 to 60 minutes the first time.")
+            self.hero_chip.setText("READY")
+            self.btn_primary.setText("Start VM")
+        else:
+            self.hero_title.setText("Ready to install")
+            self.hero_body.setText(
+                "Press Install Arch. The VM boots and the installer command is typed "
+                "in for you — nothing else to do until it reboots.")
+            self.hero_chip.setText("NOT INSTALLED")
+            self.btn_primary.setText("Install Arch")
 
     # ------------------------------------------------------------------ #
     def _page_hardware(self) -> QWidget:
@@ -615,6 +721,18 @@ class MainWindow(QMainWindow):
         ))
         theme.apply_backdrop(self, pal.name == "dark",
                              self.settings.translucency and self.settings.gradient)
+        if hasattr(self, "backdrop"):
+            self.backdrop.set_palette_(
+                pal,
+                depth=self.settings.gradient and not theme.high_contrast_active(),
+                grain=self.settings.gradient and not self.settings.reduce_motion,
+            )
+        for card in self.findChildren(Card):
+            elevate(card, pal, enabled=self.settings.gradient
+                    and not theme.high_contrast_active())
+        if hasattr(self, "meters"):
+            for m in self.meters.values():
+                m.set_palette_(pal)
         self._palette = pal
 
     def _settings_changed(self) -> None:
@@ -964,23 +1082,81 @@ class MainWindow(QMainWindow):
 
     def _refresh(self) -> None:
         run = self.runner.is_running()
-        pal = getattr(self, "_palette", theme.DARK)
+        pal = getattr(self, "_palette", theme.LIGHT)
+
+        if run and self._vm_started_at is None:
+            self._vm_started_at = time.time()
+        elif not run:
+            self._vm_started_at = None
+
         self.dot.set_state(pal.green if run else pal.muted,
                            "VM running" if run else "VM stopped",
                            pulse=run and not self.settings.reduce_motion)
         self.state_lbl.setText("Running" if run else "Stopped")
+
         self.btn_start.setEnabled(not run)
         self.btn_install.setEnabled(not run)
+        self.btn_primary.setEnabled(not run)
         self.btn_stop.setEnabled(run)
         self.btn_shutdown.setEnabled(run)
         self.cmd_card.setVisible(run and self.runner.install_mode)
+
+        # Re-probe the guest occasionally rather than every tick - qemu-img
+        # spawns a process and this runs on a timer.
+        self._tick = getattr(self, "_tick", 0) + 1
+        if self._tick % 12 == 1 and not run:
+            self._installed_cache = self._guest_installed()
+        self._refresh_hero()
+
         if hasattr(self, "stats"):
             self.stats["mem"].set(f"{self.cfg.memory_mb // 1024} GB")
             self.stats["cpu"].set(str(self.cfg.cpus))
             self.stats["res"].set(f"{self.cfg.width}×{self.cfg.height}")
+            if self._vm_started_at:
+                secs = int(time.time() - self._vm_started_at)
+                h, m = divmod(secs // 60, 60)
+                self.stats["uptime"].set(f"{h}:{m:02d}" if h else f"{secs // 60}m")
+            else:
+                self.stats["uptime"].set("—")
+
+        if hasattr(self, "meters") and self._tick % 3 == 1:
+            self._refresh_meters()
+
         if hasattr(self, "lbl_ssh"):
             u = self.ed_user.text().strip() or "arch"
             self.lbl_ssh.setText(f"{u}@127.0.0.1 : {self.sp_ssh.value()}")
+
+    def _refresh_meters(self) -> None:
+        try:
+            import ctypes
+
+            class MS(ctypes.Structure):
+                _fields_ = [("dwLength", ctypes.c_ulong),
+                            ("dwMemoryLoad", ctypes.c_ulong),
+                            ("ullTotalPhys", ctypes.c_ulonglong),
+                            ("ullAvailPhys", ctypes.c_ulonglong),
+                            ("ullTotalPageFile", ctypes.c_ulonglong),
+                            ("ullAvailPageFile", ctypes.c_ulonglong),
+                            ("ullTotalVirtual", ctypes.c_ulonglong),
+                            ("ullAvailVirtual", ctypes.c_ulonglong),
+                            ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+            m = MS()
+            m.dwLength = ctypes.sizeof(MS)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
+            used = m.ullTotalPhys - m.ullAvailPhys
+            self.meters["ram"].set_value(
+                m.dwMemoryLoad / 100.0,
+                f"{used / 1073741824:.1f} / {m.ullTotalPhys / 1073741824:.1f} GB")
+        except Exception:
+            self.meters["ram"].set_value(0, "unavailable")
+
+        try:
+            total, _used, free = shutil.disk_usage(Path(self.cfg.disk).anchor)
+            self.meters["disk"].set_value(
+                1 - (free / total),
+                f"{free / 1073741824:.0f} GB free of {total / 1073741824:.0f} GB")
+        except Exception:
+            self.meters["disk"].set_value(0, "unavailable")
 
     # ------------------------------------------------------------------ #
     def force_quit(self) -> None:
