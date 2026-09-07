@@ -8,9 +8,23 @@ ln -sf "/usr/share/zoneinfo/$TIMEZONE" /etc/localtime
 hwclock --systohc
 
 echo "==> Locale"
-sed -i "s/^#\(${LOCALE} UTF-8\)/\1/" /etc/locale.gen
+# Arch's locale.gen is inconsistent: some entries carry the codeset in the
+# name ("#en_US.UTF-8 UTF-8"), others do not ("#en_IN UTF-8"). Match either,
+# and always enable en_US.UTF-8 so there is a guaranteed fallback.
+LOCALE_BASE="${LOCALE%%.*}"
+sed -i -E "s/^#[[:space:]]*(${LOCALE_BASE}(\.UTF-8)?[[:space:]]+UTF-8)[[:space:]]*$/\1/" /etc/locale.gen
+sed -i -E "s/^#[[:space:]]*(en_US\.UTF-8[[:space:]]+UTF-8)[[:space:]]*$/\1/" /etc/locale.gen
 locale-gen
-echo "LANG=$LOCALE" > /etc/locale.conf
+
+# Use the requested locale only if it was actually generated.
+WANT=$(echo "$LOCALE" | tr 'A-Z' 'a-z' | sed 's/utf-8/utf8/')
+if locale -a 2>/dev/null | tr 'A-Z' 'a-z' | grep -qx "$WANT"; then
+  EFFECTIVE_LOCALE="$LOCALE"
+else
+  echo "!! $LOCALE was not generated; falling back to en_US.UTF-8"
+  EFFECTIVE_LOCALE="en_US.UTF-8"
+fi
+echo "LANG=$EFFECTIVE_LOCALE" > /etc/locale.conf
 echo "KEYMAP=$KEYMAP" > /etc/vconsole.conf
 # Explicit X11/Wayland keymap so Shift+digit symbols map correctly.
 mkdir -p /etc/X11/xorg.conf.d
