@@ -40,6 +40,10 @@ desktop.ini
 
 # ---- release packaging ----
 release/
+installables/**
+!installables/
+!installables/README.md
+!installables/**/README.md
 *.zip
 SHA256SUMS.txt
 

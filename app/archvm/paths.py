@@ -40,9 +40,9 @@ def vm_root() -> Path:
     Resolution order so the app keeps working if things move:
       1. ARCHVM_ROOT environment variable
       2. a path recorded in the settings file
-      3. D:\\ArchVM  (the original install)
-      4. two levels up from this file (source layout: D:\\ArchVM\\app\\archvm)
-      5. beside the executable
+      3. user data folder in user home directory (archvm_data)
+      4. beside the executable (if portable)
+      5. repository root (source layout)
     """
     env = os.environ.get("ARCHVM_ROOT")
     if env:
@@ -54,13 +54,16 @@ def vm_root() -> Path:
     if from_settings:
         return from_settings
 
+    user_data = Path.home() / "archvm_data"
+    if user_data.exists():
+        return user_data
+
     here = Path(__file__).resolve()
     found = _first_existing(
-        Path(r"D:\ArchVM"),
-        here.parent.parent.parent,                       # ...\ArchVM\app\archvm -> ArchVM
         Path(sys.executable).parent if is_frozen() else None,
+        here.parent.parent.parent,
     )
-    return found or Path.home() / "ArchVM"
+    return found or user_data
 
 
 def _settings_root_hint() -> Path | None:
