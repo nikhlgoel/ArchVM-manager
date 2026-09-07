@@ -78,6 +78,9 @@ class Tray(QObject):
         a = QAction("Type installer command", quick)
         a.triggered.connect(self._send_install_cmd)
         quick.addAction(a)
+        a = QAction("Manage snapshots…", quick)
+        a.triggered.connect(lambda: (self.show_window(), self.win._manage_snapshots()))
+        quick.addAction(a)
         quick.addSeparator()
         a = QAction("Open VM folder", quick)
         a.triggered.connect(lambda: self.win._open(paths.ROOT))
@@ -186,8 +189,7 @@ class Tray(QObject):
         self.win._send(text)
 
     def _send_install_cmd(self) -> None:
-        from .config import INSTALL_CMD
-        self.win._send(INSTALL_CMD + "\n")
+        self.win._send_install_cmd()
 
     # ------------------------------------------------------------------ #
     def _activated(self, reason) -> None:

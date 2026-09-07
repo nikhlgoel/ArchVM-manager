@@ -281,6 +281,18 @@ class VMRunner(QObject):
         self.install_mode = install
         self._gl_requested = cfg.uses_gl()
         self._started_at = time.monotonic()
+
+        # Check port availability to avoid hard QEMU socket binding crashes
+        if is_port_in_use(cfg.monitor_port):
+            free_m = find_available_port(cfg.monitor_port + 1)
+            self.output.emit(f"[vm] Port {cfg.monitor_port} is busy; allocated monitor port {free_m}")
+            cfg.monitor_port = free_m
+
+        if is_port_in_use(cfg.ssh_port):
+            free_s = find_available_port(cfg.ssh_port + 1)
+            self.output.emit(f"[vm] Port {cfg.ssh_port} is busy; allocated SSH port {free_s}")
+            cfg.ssh_port = free_s
+
         self._last_args = cfg.build_args(install)
 
         self.proc = QProcess(self)
@@ -334,6 +346,11 @@ class VMRunner(QObject):
                              "(0x%08X) - 3D acceleration is not usable here"
                              % (code & 0xFFFFFFFF))
             self.gl_crashed.emit(ran_for)
+        elif code != 0 and ran_for < 10:
+            self.output.emit(
+                f"[vm] QEMU terminated prematurely with exit code {code} "
+                f"(0x{code & 0xFFFFFFFF:08X}). Check logs above or host hypervisor/WHPX state."
+            )
 
         self.state_changed.emit("stopped")
 
@@ -371,3 +388,21 @@ def port_open(port: int, host: str = "127.0.0.1") -> bool:
             return True
     except OSError:
         return False
+
+
+def is_port_in_use(port: int, host: str = "127.0.0.1") -> bool:
+    """Return True if (host, port) is already bound or being listened on."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind((host, port))
+            return False
+        except OSError:
+            return True
+
+
+def find_available_port(preferred: int, host: str = "127.0.0.1", max_search: int = 50) -> int:
+    """Find the next available port starting from preferred."""
+    for p in range(preferred, preferred + max_search):
+        if not is_port_in_use(p, host):
+            return p
+    return preferred

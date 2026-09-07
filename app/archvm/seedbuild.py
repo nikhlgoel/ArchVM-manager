@@ -13,7 +13,7 @@ from pathlib import Path
 
 from . import paths
 
-FILES = ("bootstrap.sh", "chroot-setup.sh", "firstboot.sh", "vm.conf")
+FILES = ("bootstrap.sh", "chroot-setup.sh", "firstboot.sh", "repair.sh", "vm.conf")
 
 
 def build(dest: Path | None = None) -> tuple[bool, str]:

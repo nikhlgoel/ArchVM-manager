@@ -21,8 +21,18 @@ from typing import Callable
 
 from . import paths
 
-ISO_URL = "https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso"
-SUMS_URL = "https://geo.mirror.pkgbuild.com/iso/latest/sha256sums.txt"
+ISO_URLS = [
+    "https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso",
+    "https://mirrors.kernel.org/archlinux/iso/latest/archlinux-x86_64.iso",
+    "https://mirror.rackspace.com/archlinux/iso/latest/archlinux-x86_64.iso",
+]
+SUMS_URLS = [
+    "https://geo.mirror.pkgbuild.com/iso/latest/sha256sums.txt",
+    "https://mirrors.kernel.org/archlinux/iso/latest/sha256sums.txt",
+    "https://mirror.rackspace.com/archlinux/iso/latest/sha256sums.txt",
+]
+ISO_URL = ISO_URLS[0]
+SUMS_URL = SUMS_URLS[0]
 
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
@@ -309,11 +319,17 @@ def _d_iso() -> tuple[Status, str]:
 def _d_seed() -> tuple[Status, str]:
     p = Path(paths.ISO_DIR / "seed.iso")
     scripts = [paths.SEED_DIR / n for n in
-               ("bootstrap.sh", "chroot-setup.sh", "firstboot.sh", "vm.conf")]
+               ("bootstrap.sh", "chroot-setup.sh", "firstboot.sh", "repair.sh")]
     if not all(s.exists() for s in scripts):
-        return Status.BLOCKED, "Installer scripts are missing from the seed folder"
+        paths.deploy_seed_scripts()
+        if not all(s.exists() for s in scripts):
+            return Status.BLOCKED, "Installer scripts are missing from the seed folder"
+    vm_conf = paths.SEED_DIR / "vm.conf"
+    if not vm_conf.exists():
+        return Status.MISSING, "vm.conf not created yet (configured in next step)"
     if p.exists():
-        if p.stat().st_mtime >= max(s.stat().st_mtime for s in scripts):
+        all_files = scripts + [vm_conf]
+        if p.stat().st_mtime >= max(s.stat().st_mtime for s in all_files):
             return Status.OK, "seed.iso is up to date"
         return Status.MISSING, "seed.iso is older than the scripts"
     return Status.MISSING, "seed.iso not built yet"
@@ -359,13 +375,16 @@ def _f_firmware(rep: Reporter) -> bool:
 
 
 def _expected_sha256(rep: Reporter) -> str | None:
-    try:
-        with urllib.request.urlopen(SUMS_URL, timeout=30) as r:
-            for line in r.read().decode("utf-8", "replace").splitlines():
-                if "archlinux-x86_64.iso" in line:
-                    return line.split()[0].strip().lower()
-    except Exception as e:
-        rep.log(f"Could not fetch the checksum list: {e}")
+    for url in SUMS_URLS:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "ArchVM"})
+            with urllib.request.urlopen(req, timeout=25) as r:
+                for line in r.read().decode("utf-8", "replace").splitlines():
+                    if "archlinux-x86_64.iso" in line:
+                        return line.split()[0].strip().lower()
+        except Exception:
+            continue
+    rep.log("Could not fetch the checksum list from mirrors.")
     return None
 
 
@@ -373,57 +392,78 @@ def _f_iso(rep: Reporter) -> bool:
     paths.ISO_DIR.mkdir(parents=True, exist_ok=True)
     dest = paths.ISO_DIR / "archlinux-x86_64.iso"
     tmp = dest.with_suffix(".part")
-    rep.log("Downloading the Arch Linux ISO (about 1.5 GB)…")
-    try:
-        req = urllib.request.Request(ISO_URL, headers={"User-Agent": "ArchVM"})
-        with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as f:
-            total = int(r.headers.get("Content-Length") or 0)
-            done = 0
-            h = hashlib.sha256()
-            while True:
-                if rep.cancelled:
-                    rep.log("Download cancelled.")
-                    return False
-                chunk = r.read(1024 * 512)
-                if not chunk:
-                    break
-                f.write(chunk)
-                h.update(chunk)
-                done += len(chunk)
-                if total:
-                    rep.progress(done, total,
-                                 f"{done / 1048576:.0f} / {total / 1048576:.0f} MB")
-        digest = h.hexdigest()
-    except Exception as e:
-        rep.log(f"Download failed: {e}")
-        try:
-            tmp.unlink(missing_ok=True)
-        except OSError:
-            pass
-        return False
 
     expected = _expected_sha256(rep)
-    if expected and digest != expected:
-        rep.log("Checksum MISMATCH — the download is corrupt and was discarded.")
+
+    for idx, url in enumerate(ISO_URLS):
+        if rep.cancelled:
+            rep.log("Download cancelled.")
+            return False
+        mirror_name = url.split("/")[2]
+        rep.log(f"Downloading Arch Linux ISO from {mirror_name} (mirror {idx + 1}/{len(ISO_URLS)})…")
         try:
-            tmp.unlink(missing_ok=True)
-        except OSError:
-            pass
-        return False
-    rep.log("Checksum verified against the official mirror." if expected
-            else "Downloaded (checksum list unavailable, skipped verification).")
-    try:
-        tmp.replace(dest)
-    except OSError as e:
-        rep.log(f"Could not finalise the download: {e}")
-        return False
-    return True
+            req = urllib.request.Request(url, headers={"User-Agent": "ArchVM"})
+            with urllib.request.urlopen(req, timeout=45) as r, open(tmp, "wb") as f:
+                total = int(r.headers.get("Content-Length") or 0)
+                done = 0
+                h = hashlib.sha256()
+                while True:
+                    if rep.cancelled:
+                        rep.log("Download cancelled.")
+                        try:
+                            tmp.unlink(missing_ok=True)
+                        except OSError:
+                            pass
+                        return False
+                    chunk = r.read(1024 * 512)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    h.update(chunk)
+                    done += len(chunk)
+                    if total:
+                        rep.progress(done, total,
+                                     f"{done / 1048576:.0f} / {total / 1048576:.0f} MB")
+            digest = h.hexdigest()
+            if expected and digest != expected:
+                rep.log(f"Checksum MISMATCH from {mirror_name} — trying next mirror…")
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                continue
+
+            rep.log("Checksum verified successfully." if expected
+                    else "Downloaded (checksum list unavailable, skipped verification).")
+            try:
+                tmp.replace(dest)
+            except OSError as e:
+                rep.log(f"Could not finalise the download: {e}")
+                return False
+            return True
+        except Exception as e:
+            rep.log(f"Mirror {mirror_name} failed: {e}")
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+            continue
+
+    rep.log("All ISO mirrors failed. Please check your internet connection.")
+    return False
 
 
 def _f_seed(rep: Reporter) -> bool:
     """Rebuild seed.iso in-process; a packaged build has no build_seed.py."""
     from . import seedbuild
     paths.deploy_seed_scripts()          # refresh from the shipped copies first
+    vm_conf = paths.SEED_DIR / "vm.conf"
+    if not vm_conf.exists():
+        example = paths.SEED_DIR / "vm.conf.example"
+        if example.exists():
+            import shutil
+            shutil.copy2(example, vm_conf)
+            rep.log("Created initial vm.conf from template.")
     ok, msg = seedbuild.build()
     rep.log(msg)
     return ok

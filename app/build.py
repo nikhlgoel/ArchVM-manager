@@ -257,9 +257,80 @@ foreach ($t in $targets) {{
         log(f"shortcut update skipped: {e}")
 
 
+def find_iscc() -> Path | None:
+    from shutil import which
+    found = which("iscc")
+    if found:
+        return Path(found)
+    for c in [
+        Path.home() / "AppData" / "Local" / "Programs" / "Inno Setup 6" / "ISCC.exe",
+        Path(r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"),
+        Path(r"C:\Program Files\Inno Setup 6\ISCC.exe"),
+    ]:
+        if c.exists():
+            return c
+    return None
+
+
+def build_installer(version: str = "2.3.0") -> Path | None:
+    """Compile the official Windows installer into installables/setup."""
+    iscc = find_iscc()
+    if not iscc:
+        log("Inno Setup (ISCC.exe) not found; skipping installer build.")
+        return None
+    iss = APP_DIR / "installer" / "archvm.iss"
+    if not iss.exists():
+        log(f"installer script missing: {iss}")
+        return None
+    out_dir = APP_DIR.parent / "installables" / "setup"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_name = f"ArchVM-Installer-{version}"
+    cmd = [
+        str(iscc),
+        f"/DAppVersion={version}",
+        f"/O{out_dir}",
+        f"/F{out_name}",
+        str(iss)
+    ]
+    log(f"compiling Inno Setup installer -> {out_name}.exe…")
+    r = subprocess.run(cmd, cwd=APP_DIR, capture_output=True, text=True)
+    target = out_dir / f"{out_name}.exe"
+    if r.returncode == 0 and target.exists():
+        sz = target.stat().st_size / (1024 * 1024)
+        log(f"built installer: {target} ({sz:.1f} MB)")
+        return target
+    log("Inno Setup compile failed: " + (r.stderr or r.stdout or "")[:300])
+    return None
+
+
+def sync_installables(exe: Path, onefile: bool) -> None:
+    """Keep the installables/ folder synchronized with the latest built binaries."""
+    root_install = APP_DIR.parent / "installables"
+    try:
+        if onefile:
+            dest = root_install / "portable" / f"{NAME}.exe"
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(exe, dest)
+            log(f"synced -> {dest}")
+        else:
+            dest_dir = root_install / "onedir"
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            src_dir = exe.parent
+            for item in src_dir.iterdir():
+                d = dest_dir / item.name
+                if item.is_dir():
+                    shutil.copytree(item, d, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(item, d)
+            log(f"synced -> {dest_dir / exe.name}")
+    except Exception as e:
+        log(f"could not sync to installables/: {e}")
+
+
 def main() -> int:
     onefile = "--onefile" in sys.argv
     clean = "--clean" in sys.argv
+    with_installer = "--installer" in sys.argv or "-i" in sys.argv
     print(f"\nBuilding {NAME} ({'onefile' if onefile else 'onedir'})\n")
 
     ASSETS.mkdir(parents=True, exist_ok=True)
@@ -267,6 +338,8 @@ def main() -> int:
     exe = build(onefile=onefile, clean=clean)
     if not exe:
         return 1
+
+    sync_installables(exe, onefile)
 
     if "--sign" in sys.argv:
         i = sys.argv.index("--sign")
@@ -280,6 +353,11 @@ def main() -> int:
         log("shortcuts skipped (--no-shortcuts)")
     else:
         make_shortcuts(exe)
+
+    if with_installer and not onefile:
+        from archvm.paths import APP_VERSION
+        build_installer(APP_VERSION)
+
     print(f"\nDone.  {exe}\n")
     return 0
 

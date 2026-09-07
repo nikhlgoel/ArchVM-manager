@@ -68,8 +68,10 @@ echo "    ok"
 
 echo "==> Waiting for network"
 for i in $(seq 1 30); do
-  ping -c1 -W1 archlinux.org &>/dev/null && break
-  [ "$i" = 30 ] && die "no network"
+  if ping -c1 -W1 archlinux.org &>/dev/null || curl -fsSI --connect-timeout 3 https://archlinux.org &>/dev/null; then
+    break
+  fi
+  [ "$i" = 30 ] && die "no network connectivity"
   sleep 2
 done
 
@@ -96,6 +98,7 @@ fi
 
 echo "==> Running upstream installer (non-interactive, long)"
 cd "$II"
+chmod +x ./setup 2>/dev/null || true
 ./setup install -f --skip-allgreeting || die "dots-hyprland setup install"
 
 echo "==> Layering the $FORK_NAME Quickshell fork"
@@ -206,8 +209,11 @@ sudo systemctl set-default graphical.target
 sudo systemctl disable archvm-setup.service 2>/dev/null || true
 sudo systemctl enable getty@tty1.service 2>/dev/null || true
 
-echo "==> Revoking temporary passwordless sudo"
+echo "==> Revoking temporary passwordless sudo & autologin"
 sudo rm -f /etc/sudoers.d/99-firstboot-tmp
+sudo rm -f /etc/systemd/system/getty@tty1.service.d/autologin.conf
+sudo rmdir /etc/systemd/system/getty@tty1.service.d 2>/dev/null || true
+sudo systemctl daemon-reload 2>/dev/null || true
 
 touch "$HOME/.local/share/hypr-setup-done"
 

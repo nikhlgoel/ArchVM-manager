@@ -58,36 +58,46 @@ class Palette:
     rail_muted: str
     rail_active: str
     teal: str
+    brand_a: str = "#38bdf8"
+    brand_b: str = "#818cf8"
+    surface_sunken: str = ""
+    border_highlight: str = ""
 
 
 LIGHT = Palette(
     name="light",
-    bg="#eef2fb", bg_alt="#f7f9ff",
-    panel="#ffffff", card="#ffffff", card_hi="#f2f6ff",
-    border="#d3ddf0", border_soft="#e4ebf8",
-    text="#101728", text_soft="#33405c", muted="#6b7692",
-    accent="#3b74e8", accent_soft="#dce7ff", on_accent="#ffffff",
-    green="#0e9f6e", amber="#b45309", red="#dc2626",
-    shadow="#8fa3c8", focus="#1f5fd8",
-    bloom_a="#7aa5ff", bloom_b="#b79bff", bloom_c="#8fd8ff",
-    base="#e9eefb",
-    rail="#161c2e", rail_text="#e8edf8", rail_muted="#7b87a6",
-    rail_active="#1f2a44", teal="#12b5aa",
+    bg="#f3f6fc", bg_alt="#f8fafd",
+    panel="#ffffff", card="#ffffff", card_hi="#f0f5ff",
+    border="#d6e0f0", border_soft="#e5edf8",
+    text="#0f172a", text_soft="#334155", muted="#64748b",
+    accent="#0284c7", accent_soft="#e0f2fe", on_accent="#ffffff",
+    green="#059669", amber="#d97706", red="#dc2626",
+    shadow="#8fa3c8", focus="#0284c7",
+    bloom_a="#93c5fd", bloom_b="#c4b5fd", bloom_c="#67e8f9",
+    base="#edf2fa",
+    rail="#0f172a", rail_text="#f8fafc", rail_muted="#94a3b8",
+    rail_active="#1e293b", teal="#0d9488",
+    brand_a="#0284c7", brand_b="#6366f1",
+    surface_sunken="#f1f5f9",
+    border_highlight="rgba(255, 255, 255, 0.90)",
 )
 
 DARK = Palette(
     name="dark",
-    bg="#0b0e17", bg_alt="#121727",
-    panel="#141a2b", card="#182034", card_hi="#1f2942",
-    border="#2a3552", border_soft="#222c46",
-    text="#eaeefb", text_soft="#c3cbe4", muted="#8590b0",
-    accent="#5b8cff", accent_soft="#1c2a4d", on_accent="#ffffff",
+    bg="#0b0e17", bg_alt="#101524",
+    panel="#141a2c", card="#182035", card_hi="#1f2944",
+    border="#263352", border_soft="#1c253d",
+    text="#f1f5f9", text_soft="#cbd5e1", muted="#7888a6",
+    accent="#38bdf8", accent_soft="#132742", on_accent="#ffffff",
     green="#34d399", amber="#fbbf24", red="#f87171",
-    shadow="#000000", focus="#7aa9ff",
-    bloom_a="#2d4a9e", bloom_b="#4c2f8f", bloom_c="#12507a",
+    shadow="#000000", focus="#38bdf8",
+    bloom_a="#1e3a8a", bloom_b="#4c1d95", bloom_c="#0e7490",
     base="#0b0e17",
-    rail="#0e1322", rail_text="#e8edf8", rail_muted="#7b87a6",
-    rail_active="#1a2338", teal="#2dd4c4",
+    rail="#080b13", rail_text="#f8fafc", rail_muted="#64748b",
+    rail_active="#141c30", teal="#2dd4bf",
+    brand_a="#38bdf8", brand_b="#818cf8",
+    surface_sunken="#0f1422",
+    border_highlight="rgba(255, 255, 255, 0.12)",
 )
 
 
@@ -340,18 +350,35 @@ QPushButton#Nav:hover {{
 }}
 QPushButton#Nav:checked {{
     background: {p.rail_active}; color: {p.rail_text};
-    border-left: 3px solid {p.teal}; font-weight: 700;
+    border-left: 3px solid {a}; font-weight: 700;
 }}
-QPushButton#Nav:focus {{ border-left-color: {p.teal}; outline: none; }}
+QPushButton#Nav:focus {{ border-left-color: {a}; outline: none; }}
+
+#BrandVersion {{
+    background: {_rgba(a, '0.18')};
+    color: {a};
+    border: 1px solid {_rgba(a, '0.38')};
+    border-radius: 6px;
+    padding: 1px 6px;
+    font-size: {px(9.5)};
+    font-weight: 750;
+    letter-spacing: 0.4px;
+}}
+#RailStatusCard {{
+    background: {_rgba(p.rail_active, '0.75')};
+    border: 1px solid {_rgba(p.rail_text, '0.10')};
+    border-radius: 10px;
+    padding: 7px 10px;
+}}
 
 QPushButton#Help {{
-    background: {_rgba(p.teal, '0.16')};
-    border: 2px solid {_rgba(p.teal, '0.55')};
-    border-radius: 19px; color: {p.teal};
+    background: {_rgba(a, '0.14')};
+    border: 2px solid {_rgba(a, '0.45')};
+    border-radius: 19px; color: {a};
     font-size: {px(16)}; font-weight: 800; padding: 0;
 }}
-QPushButton#Help:hover {{ background: {p.teal}; color: #06232b;
-                          border-color: {p.teal}; }}
+QPushButton#Help:hover {{ background: {a}; color: {p.on_accent};
+                          border-color: {a}; }}
 
 /* ---------------- alert bar ---------------- */
 #AlertBar {{ background: {p.red}; border: none; }}
@@ -361,7 +388,7 @@ QPushButton#Help:hover {{ background: {p.teal}; color: #06232b;
     border-radius: 7px; padding: 5px 12px; font-weight: 650;
 }}
 #AlertBar QPushButton:hover {{ background: {_rgba('#000000', '0.30')}; }}
-#AlertBarOk {{ background: {p.teal}; }}
+#AlertBarOk {{ background: {p.green}; }}
 #AlertBarWarn {{ background: {p.amber}; }}
 
 /* ---------------- cards ---------------- */
@@ -370,7 +397,7 @@ QPushButton#Help:hover {{ background: {p.teal}; color: #06232b;
         stop:0 {_rgba(p.card, glass)},
         stop:1 {_rgba(p.card_hi, glass)});
     border: {bw} solid {p.border_soft};
-    border-top: {bw} solid {_rgba('#ffffff', '0.9' if p.name == 'light' else '0.10')};
+    border-top: {bw} solid {_rgba('#ffffff', '0.90' if p.name == 'light' else '0.12')};
     border-radius: 16px;
 }}
 #CardFlat {{
@@ -379,21 +406,36 @@ QPushButton#Help:hover {{ background: {p.teal}; color: #06232b;
 }}
 #Hero {{
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 {_rgba(a, '0.16')},
-        stop:0.55 {_rgba(BRAND_B, '0.10')},
-        stop:1 {_rgba(p.bloom_c, '0.12')});
-    border: {bw} solid {_rgba(a, '0.26')};
+        stop:0 {_rgba(a, '0.14')},
+        stop:0.45 {_rgba(p.brand_b, '0.08')},
+        stop:1 {_rgba(p.bloom_c, '0.10')});
+    border: {bw} solid {_rgba(a, '0.28')};
+    border-top: {bw} solid {_rgba('#ffffff', '0.80' if p.name == 'light' else '0.18')};
     border-radius: 18px;
 }}
-#CardTitle {{ font-size: {px(13.5)}; font-weight: 700; color: {p.text}; }}
+#StatTile {{
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 {_rgba(p.card, '0.92' if p.name == 'light' else '0.75')},
+        stop:1 {_rgba(p.card_hi, '0.98' if p.name == 'light' else '0.88')});
+    border: {bw} solid {p.border_soft};
+    border-top: {bw} solid {_rgba('#ffffff', '0.90' if p.name == 'light' else '0.14')};
+    border-radius: 14px;
+}}
+#StatTile:hover {{
+    border-color: {_rgba(a, '0.50')};
+    background: {_rgba(p.card_hi, '1.0' if p.name == 'light' else '0.96')};
+}}
+#CardTitle {{ font-size: {px(14)}; font-weight: 700; color: {p.text}; }}
 #CardHint  {{ font-size: {px(11.5)}; color: {p.muted}; }}
 #PageTitle {{ font-size: {px(25)}; font-weight: 800; color: {p.text};
               letter-spacing: -0.4px; }}
 #PageSub   {{ font-size: {px(12.5)}; color: {p.muted}; }}
-#StatBig   {{ font-size: {px(26)}; font-weight: 800; color: {p.text};
-              letter-spacing: -0.5px; }}
-#StatLabel {{ font-size: {px(10)}; color: {p.muted}; font-weight: 700;
-              letter-spacing: 0.8px; }}
+#StatIcon  {{ font-size: {px(15)}; }}
+#StatBig   {{ font-size: {px(21)}; font-weight: 800; color: {p.text};
+              letter-spacing: -0.3px; }}
+#StatLabel {{ font-size: {px(9.5)}; color: {p.muted}; font-weight: 750;
+              letter-spacing: 0.9px; }}
+#StatSub   {{ font-size: {px(10.5)}; color: {p.muted}; font-weight: 550; }}
 #Muted     {{ color: {p.muted}; }}
 #Divider   {{ background: {p.border_soft}; max-height: 1px; border: none; }}
 
@@ -420,19 +462,19 @@ QPushButton:disabled {{
 
 QPushButton#Primary {{
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 {p.teal}, stop:1 {_darken(p.teal, 18)});
-    border: {bw} solid {_rgba(p.teal, '0.85')};
+        stop:0 {a}, stop:1 {_darken(a, 18)});
+    border: {bw} solid {_rgba(a, '0.85')};
     color: #ffffff; font-weight: 700;
 }}
 QPushButton#Primary:hover {{
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 {_lighten(p.teal, 12)}, stop:1 {p.teal});
+        stop:0 {_lighten(a, 12)}, stop:1 {a});
 }}
 QPushButton#Primary:pressed {{
-    background: {_darken(p.teal, 20)};
+    background: {_darken(a, 20)};
 }}
 QPushButton#Primary:disabled {{
-    background: {_rgba(p.teal, '0.32')}; border-color: transparent;
+    background: {_rgba(a, '0.32')}; border-color: transparent;
     color: {_rgba(p.on_accent, '0.75')};
 }}
 QPushButton#Danger {{
@@ -480,6 +522,83 @@ QLabel#Chip {{
     border: {bw} solid {_rgba(a, '0.30')};
     border-radius: 9px; padding: 4px 10px;
     font-size: {px(11)}; font-weight: 700;
+}}
+
+/* ---------------- status badge & command snippet ---------------- */
+#StatusBadge {{
+    border-radius: 12px;
+    padding: 4px 11px;
+}}
+#StatusBadge QLabel {{
+    font-size: {px(11)};
+    font-weight: 750;
+    letter-spacing: 0.5px;
+}}
+#StatusBadge_running {{
+    background: {_rgba(p.green, '0.15')};
+    border: {bw} solid {_rgba(p.green, '0.40')};
+}}
+#StatusBadge_running QLabel {{
+    color: {p.green};
+}}
+#StatusBadge_installing {{
+    background: {_rgba(p.amber, '0.15')};
+    border: {bw} solid {_rgba(p.amber, '0.40')};
+}}
+#StatusBadge_installing QLabel {{
+    color: {p.amber};
+}}
+#StatusBadge_ready {{
+    background: {_rgba(a, '0.15')};
+    border: {bw} solid {_rgba(a, '0.40')};
+}}
+#StatusBadge_ready QLabel {{
+    color: {a};
+}}
+#StatusBadge_stopped {{
+    background: {_rgba(p.muted, '0.12')};
+    border: {bw} solid {_rgba(p.muted, '0.30')};
+}}
+#StatusBadge_stopped QLabel {{
+    color: {p.muted};
+}}
+
+#CommandSnippet {{
+    background: {_rgba(p.bg_alt, '0.98')};
+    border: {bw} solid {p.border};
+    border-radius: 12px;
+}}
+#TerminalHeader {{
+    background: {_rgba(p.card, '0.96')};
+    border-bottom: 1px solid {p.border_soft};
+    border-top-left-radius: 11px;
+    border-top-right-radius: 11px;
+    padding: 7px 12px;
+}}
+#TerminalDots {{
+    color: {p.muted};
+    font-size: {px(10)};
+    font-weight: 700;
+    letter-spacing: 2px;
+}}
+#TerminalTitle {{
+    color: {p.muted};
+    font-size: {px(11)};
+    font-weight: 600;
+    font-family: 'Cascadia Mono', 'Consolas', monospace;
+}}
+#Toast {{
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 {_rgba(p.card, '0.96')},
+        stop:1 {_rgba(p.card_hi, '0.98')});
+    border: {bw} solid {p.border};
+    border-left: 4px solid {a};
+    border-radius: 12px;
+}}
+#Toast QLabel {{
+    color: {p.text};
+    font-size: {px(12.5)};
+    font-weight: 550;
 }}
 
 /* ---------------- checkbox / slider ---------------- */
@@ -539,6 +658,50 @@ QProgressBar::chunk {{
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
         stop:0 {a}, stop:1 {BRAND_B});
     border-radius: 6px;
+}}
+QProgressBar#HeroProgress {{
+    background: {_rgba(p.border_soft, '0.5')};
+    border: none;
+    border-radius: 3px;
+    height: 5px;
+    margin-top: 4px;
+}}
+QProgressBar#HeroProgress::chunk {{
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 {a}, stop:0.5 {p.teal}, stop:1 {BRAND_B});
+    border-radius: 3px;
+}}
+
+/* ---------------- table / lists ---------------- */
+QTableWidget, QTreeWidget, QListWidget {{
+    background: {_rgba(p.bg_alt, '0.96')};
+    border: {bw} solid {p.border_soft};
+    border-radius: 12px;
+    gridline-color: {p.border_soft};
+    selection-background-color: {_rgba(a, '0.18')};
+    selection-color: {p.text};
+    outline: none;
+    color: {p.text};
+    font-size: {px(12.5)};
+}}
+QHeaderView::section {{
+    background: {p.panel};
+    color: {p.muted};
+    font-weight: 700;
+    font-size: {px(10.5)};
+    letter-spacing: 0.5px;
+    padding: 8px 12px;
+    border: none;
+    border-bottom: 1px solid {p.border_soft};
+}}
+QTableWidget::item {{
+    padding: 8px 10px;
+    border-bottom: 1px solid {_rgba(p.border_soft, '0.45')};
+}}
+QTableWidget::item:selected {{
+    background: {_rgba(a, '0.16')};
+    color: {p.text};
+    font-weight: 600;
 }}
 """
 

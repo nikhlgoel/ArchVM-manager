@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer, QRectF
-from PySide6.QtGui import QPainter, QColor, QBrush, QFont
+from PySide6.QtGui import QPainter, QColor, QBrush, QFont, QLinearGradient
 from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget,
     QGraphicsDropShadowEffect, QSizePolicy, QLayout,
@@ -121,26 +121,47 @@ class StatusDot(QLabel):
             p.drawEllipse(1, 1, 10, 10)
 
 
-class Stat(QWidget):
-    """A big value with a small caption."""
+class Stat(QFrame):
+    """A big value with icon, caption, and subtle status sub-caption in an elevated tile."""
 
-    def __init__(self, label: str, value: str = "-", parent=None):
+    def __init__(self, label: str, value: str = "-", icon: str = "", sub: str = "", parent=None):
         super().__init__(parent)
+        self.setObjectName("StatTile")
         v = QVBoxLayout(self)
-        v.setContentsMargins(0, 0, 0, 0)
+        v.setContentsMargins(16, 12, 16, 12)
         v.setSpacing(2)
-        self.value = QLabel(value)
-        self.value.setObjectName("StatBig")
+
+        top = QHBoxLayout()
+        top.setSpacing(6)
+        if icon:
+            self.icon_lbl = QLabel(icon)
+            self.icon_lbl.setObjectName("StatIcon")
+            top.addWidget(self.icon_lbl)
+        else:
+            self.icon_lbl = None
+
         cap = QLabel(label.upper())
         cap.setObjectName("StatLabel")
+        top.addWidget(cap)
+        top.addStretch()
+        v.addLayout(top)
+
+        self.value = QLabel(value)
+        self.value.setObjectName("StatBig")
         v.addWidget(self.value)
-        v.addWidget(cap)
+
+        self.sub = QLabel(sub)
+        self.sub.setObjectName("StatSub")
+        v.addWidget(self.sub)
+
         self._label = label
         self.setAccessibleName(label)
 
-    def set(self, text: str) -> None:
+    def set(self, text: str, sub: str | None = None) -> None:
         self.value.setText(text)
-        self.setAccessibleDescription(f"{self._label}: {text}")
+        if sub is not None:
+            self.sub.setText(sub)
+        self.setAccessibleDescription(f"{self._label}: {text} {self.sub.text()}")
 
 
 class Toast(QFrame):
@@ -148,7 +169,7 @@ class Toast(QFrame):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setObjectName("Card")
+        self.setObjectName("Toast")
         self.setVisible(False)
         h = QHBoxLayout(self)
         h.setContentsMargins(14, 10, 10, 10)
@@ -226,24 +247,82 @@ class Backdrop(QWidget):
                              depth=self._depth, grain=self._grain)
 
 
-class Chip(QLabel):
-    """A small pill for status words and counts."""
+class StatusBadge(QFrame):
+    """Semantic status pill with a glowing state indicator."""
 
-    def __init__(self, text: str = "", parent=None):
-        super().__init__(text, parent)
-        self.setObjectName("Chip")
-        self.setAlignment(Qt.AlignCenter)
+    def __init__(self, text: str = "", state: str = "stopped", parent=None):
+        super().__init__(parent)
+        self.setObjectName("StatusBadge")
+        h = QHBoxLayout(self)
+        h.setContentsMargins(10, 4, 10, 4)
+        h.setSpacing(6)
+
+        self.dot = StatusDot()
+        self.label = QLabel(text.upper() if text else "STOPPED")
+        h.addWidget(self.dot)
+        h.addWidget(self.label)
+
+        self._state = state
+        self.setText(text or "NOT INSTALLED")
+
+    def setText(self, text: str) -> None:
+        """Compatibility with standard label API."""
+        txt = text.strip().upper() if text else "NOT INSTALLED"
+        self.label.setText(txt)
+        state_map = {
+            "RUNNING": "running",
+            "INSTALLING": "installing",
+            "READY": "ready",
+            "NOT INSTALLED": "stopped",
+            "STOPPED": "stopped",
+        }
+        st = state_map.get(txt, "stopped")
+        self.set_status(st, txt)
+
+    def text(self) -> str:
+        return self.label.text()
+
+    def set_status(self, state: str, text: str = "") -> None:
+        self._state = state
+        txt = text.upper() if text else state.upper()
+        self.label.setText(txt)
+        self.setObjectName(f"StatusBadge_{state}")
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+        pal = getattr(self.window(), "_palette", None)
+        dot_col = "#64748b"
+        pulse = False
+        if pal:
+            if state == "running":
+                dot_col = pal.green
+                pulse = True
+            elif state == "installing":
+                dot_col = pal.amber
+                pulse = True
+            elif state == "ready":
+                dot_col = pal.accent
+            else:
+                dot_col = pal.muted
+
+        self.dot.set_state(dot_col, txt, pulse=pulse)
+
+
+class Chip(StatusBadge):
+    """A small pill for status words and counts."""
+    pass
 
 
 class MeterBar(QWidget):
-    """A slim labelled usage bar - used for host memory and disk."""
+    """A sleek labelled usage bar - used for host memory and disk."""
 
-    def __init__(self, label: str, palette, parent=None):
+    def __init__(self, label: str, palette, icon: str = "", parent=None):
         super().__init__(parent)
         self._pal = palette
+        self._icon = icon
         self._frac = 0.0
         self._text = ""
-        self.setFixedHeight(38)
+        self.setFixedHeight(44)
         self._label = label
         self.setAccessibleName(label)
 
@@ -261,27 +340,108 @@ class MeterBar(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         pal = self._pal
-        f = QFont(self.font()); f.setPointSizeF(max(7.5, f.pointSizeF() - 1.0))
+        w, h = self.width(), self.height()
+
+        f = QFont(self.font())
+        f.setPointSizeF(max(8.5, f.pointSizeF() - 0.5))
+        f.setBold(True)
         p.setFont(f)
+
+        # Label with optional icon
+        title = f"{self._icon}  {self._label}" if self._icon else self._label
+        p.setPen(QColor(pal.text))
+        p.drawText(0, 0, w, 18, Qt.AlignLeft | Qt.AlignVCenter, title)
+
+        # Value pill text
         p.setPen(QColor(pal.muted))
-        p.drawText(0, 0, self.width(), 15, Qt.AlignLeft | Qt.AlignVCenter, self._label)
-        p.drawText(0, 0, self.width(), 15, Qt.AlignRight | Qt.AlignVCenter, self._text)
+        p.drawText(0, 0, w, 18, Qt.AlignRight | Qt.AlignVCenter, self._text)
 
-        track = QRectF(0, 21, self.width(), 7)
+        # Sunken track
+        track = QRectF(0, 24, w, 8)
         p.setPen(Qt.NoPen)
-        p.setBrush(QBrush(QColor(pal.border_soft)))
-        p.drawRoundedRect(track, 3.5, 3.5)
+        track_col = QColor(pal.border_soft)
+        track_col.setAlpha(180)
+        p.setBrush(QBrush(track_col))
+        p.drawRoundedRect(track, 4.0, 4.0)
 
+        # Progress fill
         if self._frac > 0:
-            fill = QRectF(track)
-            fill.setWidth(track.width() * self._frac)
-            colour = pal.accent
-            if self._frac > 0.9:
-                colour = pal.red
+            fill_w = max(8.0, track.width() * self._frac)
+            fill = QRectF(0, 24, fill_w, 8)
+            g = QLinearGradient(fill.topLeft(), fill.topRight())
+
+            if self._frac > 0.90:
+                g.setColorAt(0.0, QColor(pal.amber))
+                g.setColorAt(1.0, QColor(pal.red))
             elif self._frac > 0.75:
-                colour = pal.amber
-            p.setBrush(QBrush(QColor(colour)))
-            p.drawRoundedRect(fill, 3.5, 3.5)
+                g.setColorAt(0.0, QColor(pal.accent))
+                g.setColorAt(1.0, QColor(pal.amber))
+            else:
+                brand_b = getattr(pal, "brand_b", pal.accent)
+                g.setColorAt(0.0, QColor(pal.accent))
+                g.setColorAt(1.0, QColor(brand_b))
+
+            p.setBrush(QBrush(g))
+            p.drawRoundedRect(fill, 4.0, 4.0)
+
+
+class CommandSnippet(QFrame):
+    """
+    A macOS/Linux terminal-styled command card with simulated title bar,
+    monospace display, and a 1-click copy button with animated feedback.
+    """
+
+    def __init__(self, command: str, title: str = "Live ISO Terminal", parent=None):
+        super().__init__(parent)
+        self.setObjectName("CommandSnippet")
+        self._command = command
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # Header bar
+        head = QWidget()
+        head.setObjectName("TerminalHeader")
+        hl = QHBoxLayout(head)
+        hl.setContentsMargins(12, 7, 12, 7)
+        hl.setSpacing(8)
+
+        dots = QLabel("●  ●  ●")
+        dots.setObjectName("TerminalDots")
+        hl.addWidget(dots)
+
+        t = QLabel(title)
+        t.setObjectName("TerminalTitle")
+        hl.addWidget(t)
+        hl.addStretch()
+
+        self.btn_copy = button("Copy", ghost=True)
+        self.btn_copy.setFixedWidth(70)
+        self.btn_copy.clicked.connect(self._copy_cmd)
+        hl.addWidget(self.btn_copy)
+        outer.addWidget(head)
+
+        # Command label body
+        body = QWidget()
+        bl = QVBoxLayout(body)
+        bl.setContentsMargins(14, 12, 14, 14)
+        self.cmd_lbl = QLabel(command)
+        self.cmd_lbl.setObjectName("Cmd")
+        self.cmd_lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.cmd_lbl.setWordWrap(True)
+        bl.addWidget(self.cmd_lbl)
+        outer.addWidget(body)
+
+    def set_command(self, command: str) -> None:
+        self._command = command
+        self.cmd_lbl.setText(command)
+
+    def _copy_cmd(self) -> None:
+        from PySide6.QtWidgets import QApplication
+        QApplication.clipboard().setText(self._command)
+        self.btn_copy.setText("✓ Copied!")
+        QTimer.singleShot(2000, lambda: self.btn_copy.setText("Copy"))
 
 
 def elevate(widget: QWidget, palette, *, blur: int = 30, y: int = 6,

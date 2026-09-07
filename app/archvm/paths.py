@@ -125,7 +125,7 @@ VM_CONFIG_FILE = CONFIG_DIR / "vm.json"
 LEGACY_VM_CONFIG = ROOT / "manager" / "config.json"
 
 
-SEED_SCRIPTS = ("bootstrap.sh", "chroot-setup.sh", "firstboot.sh")
+SEED_SCRIPTS = ("bootstrap.sh", "chroot-setup.sh", "firstboot.sh", "repair.sh")
 
 
 def bundled_seed_dir() -> Path | None:

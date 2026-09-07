@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QSharedMemory, QTimer
+from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
 from . import icons, paths
@@ -71,6 +72,15 @@ def main(argv: list[str] | None = None) -> int:
     app.setOrganizationName(paths.ORG_NAME)
     app.setWindowIcon(icons.app_icon())
     app.setQuitOnLastWindowClosed(False)      # tray keeps us alive
+
+    ipc_name = f"{paths.APP_NAME}-ipc"
+    client = QLocalSocket()
+    client.connectToServer(ipc_name)
+    if client.waitForConnected(350):
+        client.write(b"ACTIVATE\n")
+        client.waitForBytesWritten(600)
+        client.disconnectFromServer()
+        return 0
 
     lock = _single_instance_guard()
     if lock is None:
@@ -145,6 +155,23 @@ def main(argv: list[str] | None = None) -> int:
     stage("Preparing the interface…", 0.72)
     win = MainWindow(cfg, settings)
     stage("Ready", 1.0)
+
+    ipc_server = QLocalServer(app)
+    QLocalServer.removeServer(ipc_name)
+    if ipc_server.listen(ipc_name):
+        def _on_ipc() -> None:
+            conn = ipc_server.nextPendingConnection()
+            if conn:
+                def _read() -> None:
+                    data = bytes(conn.readAll()).decode("utf-8", "ignore")
+                    if "ACTIVATE" in data:
+                        win.setWindowState(win.windowState() & ~Qt.WindowMinimized | Qt.WindowActive)
+                        win.show()
+                        win.raise_()
+                        win.activateWindow()
+                    conn.close()
+                conn.readyRead.connect(_read)
+        ipc_server.newConnection.connect(_on_ipc)
 
     tray = None
     if QSystemTrayIcon.isSystemTrayAvailable():

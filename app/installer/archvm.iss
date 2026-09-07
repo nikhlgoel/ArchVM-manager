@@ -38,8 +38,8 @@ LicenseFile=..\..\LICENSE
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog commandline
 
-OutputDir=..\..\release
-OutputBaseFilename=ArchVM-{#AppVersion}-windows-x64-setup
+OutputDir=..\..\installables\setup
+OutputBaseFilename=ArchVM-Installer-{#AppVersion}
 SetupIconFile=..\assets\archvm.ico
 WizardStyle=modern
 Compression=lzma2/max
@@ -57,10 +57,11 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; \
   GroupDescription: "Additional shortcuts:"
 
 [Files]
-Source: "..\dist\ArchVM\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\installables\onedir\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\..\README.md";  DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\LICENSE";    DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\docs\vm-guide.md"; DestDir: "{app}\docs"; Flags: ignoreversion
+Source: "..\assets\archvm.ico";   DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#AppName}";        Filename: "{app}\{#AppExeName}"

@@ -54,11 +54,11 @@ class _Base:
             # tolerate type drift from hand-edited files
             expected = next(f.type for f in fields(cls) if f.name == k)
             try:
-                if expected is int and not isinstance(v, bool):
+                if (expected is int or expected == "int") and not isinstance(v, bool):
                     v = int(v)
-                elif expected is bool:
+                elif expected is bool or expected == "bool":
                     v = bool(v)
-                elif expected is str:
+                elif expected is str or expected == "str":
                     v = str(v)
             except (TypeError, ValueError):
                 continue

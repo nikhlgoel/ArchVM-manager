@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -15,12 +16,13 @@ from PySide6.QtWidgets import (
     QComboBox, QSpinBox, QLineEdit, QPlainTextEdit, QTextEdit, QCheckBox,
     QFormLayout, QMessageBox, QStackedWidget, QButtonGroup, QScrollArea,
     QInputDialog, QApplication, QProgressBar, QFileDialog, QSlider, QFrame,
+    QDialog, QTableWidget, QTableWidgetItem, QHeaderView,
 )
 
 from . import icons, paths, qemu, theme
 from .config import AppSettings, VMConfig, INSTALL_CMD
-from .widgets import (AlertBar, Backdrop, Card, Chip, MeterBar, Stat,
-                      StatusDot, Toast, a11y, button, elevate)
+from .widgets import (AlertBar, Backdrop, Card, Chip, CommandSnippet, MeterBar,
+                      Stat, StatusBadge, StatusDot, Toast, a11y, button, elevate)
 
 def _within(path: Path, root: Path) -> bool:
     """True when `path` sits inside `root`. Never raises on odd drives."""
@@ -32,11 +34,11 @@ def _within(path: Path, root: Path) -> bool:
 
 
 NAV_SECTIONS = [
-    ("MACHINE", ["Overview", "Hardware"]),
-    ("SETUP", ["Guest", "Tools"]),
-    ("SYSTEM", ["Settings", "Logs"]),
+    ("MACHINE", [("Overview", "✦"), ("Hardware", "⚡")]),
+    ("SETUP", [("Guest", "⚙"), ("Tools", "🔧")]),
+    ("SYSTEM", [("Settings", "⛯"), ("Logs", "📄")]),
 ]
-PAGES = [name for _section, items in NAV_SECTIONS for name in items]
+PAGES = [name for _section, items in NAV_SECTIONS for name, _glyph in items]
 
 
 class MainWindow(QMainWindow):
@@ -165,6 +167,14 @@ class MainWindow(QMainWindow):
             parent = parent.parentWidget()
         return ""
 
+    def _toggle_echo(self, edit: QLineEdit, btn: QPushButton) -> None:
+        if edit.echoMode() == QLineEdit.Password:
+            edit.setEchoMode(QLineEdit.Normal)
+            btn.setText("Hide")
+        else:
+            edit.setEchoMode(QLineEdit.Password)
+            btn.setText("Show")
+
     def _sidebar(self) -> QWidget:
         """
         Navigation rail: mark, grouped sections, then a help affordance and the
@@ -182,12 +192,19 @@ class MainWindow(QMainWindow):
         logo = QLabel()
         logo.setPixmap(icons.app_icon().pixmap(QSize(32, 32)))
         txt = QVBoxLayout()
-        txt.setSpacing(0)
+        txt.setSpacing(1)
+        brow = QHBoxLayout()
+        brow.setSpacing(6)
         b = QLabel(paths.APP_NAME)
         b.setObjectName("Brand")
+        ver = QLabel(f"v{paths.APP_VERSION}")
+        ver.setObjectName("BrandVersion")
+        brow.addWidget(b)
+        brow.addWidget(ver)
+        brow.addStretch()
         sub = QLabel("Arch \u00b7 Hyprland")
         sub.setObjectName("BrandSub")
-        txt.addWidget(b)
+        txt.addLayout(brow)
         txt.addWidget(sub)
         head.addWidget(logo)
         head.addLayout(txt)
@@ -203,8 +220,8 @@ class MainWindow(QMainWindow):
             lab.setObjectName("SectionLabel")
             v.addWidget(lab)
             v.addSpacing(2)
-            for name in items:
-                btn = QPushButton(name)
+            for name, glyph in items:
+                btn = QPushButton(f"{glyph}  {name}")
                 btn.setObjectName("Nav")
                 btn.setCheckable(True)
                 btn.setChecked(idx == 0)
@@ -241,14 +258,18 @@ class MainWindow(QMainWindow):
         v.addWidget(rule)
         v.addSpacing(9)
 
-        statusrow = QHBoxLayout()
+        status_card = QFrame()
+        status_card.setObjectName("RailStatusCard")
+        statusrow = QHBoxLayout(status_card)
+        statusrow.setContentsMargins(10, 7, 10, 7)
+        statusrow.setSpacing(8)
         self.dot = StatusDot()
         self.state_lbl = QLabel("Stopped")
         self.state_lbl.setObjectName("RailFoot")
         statusrow.addWidget(self.dot)
         statusrow.addWidget(self.state_lbl)
         statusrow.addStretch()
-        v.addLayout(statusrow)
+        v.addWidget(status_card)
         return w
 
     def _page(self, title: str, sub: str) -> tuple[QScrollArea, QVBoxLayout]:
@@ -281,7 +302,7 @@ class MainWindow(QMainWindow):
         self.hero.setObjectName("Hero")
         hrow = QHBoxLayout()
         hcol = QVBoxLayout()
-        hcol.setSpacing(5)
+        hcol.setSpacing(6)
         self.hero_title = QLabel("Ready to install")
         self.hero_title.setObjectName("CardTitle")
         f = QFont(); f.setPointSize(15); f.setBold(True)
@@ -291,8 +312,16 @@ class MainWindow(QMainWindow):
         self.hero_body.setWordWrap(True)
         hcol.addWidget(self.hero_title)
         hcol.addWidget(self.hero_body)
+
+        self.hero_progress = QProgressBar()
+        self.hero_progress.setObjectName("HeroProgress")
+        self.hero_progress.setRange(0, 0)
+        self.hero_progress.setTextVisible(False)
+        self.hero_progress.setVisible(False)
+        hcol.addWidget(self.hero_progress)
+
         hrow.addLayout(hcol, 1)
-        self.hero_chip = Chip("")
+        self.hero_chip = StatusBadge("NOT INSTALLED", "stopped")
         hrow.addWidget(self.hero_chip, 0, Qt.AlignTop)
         self.hero.add(hrow)
 
@@ -305,37 +334,39 @@ class MainWindow(QMainWindow):
         self.btn_start.clicked.connect(lambda: self._start(False))
         self.btn_install = button("Reinstall…", tip="Boot the Arch installer again")
         self.btn_install.clicked.connect(lambda: self._start(True))
+        self.btn_hero_ssh = button("Open SSH", tip="Launch SSH terminal session into the VM")
+        self.btn_hero_ssh.clicked.connect(self._open_ssh)
         self.btn_shutdown = button("Shut down", tip="Ask the guest to power off cleanly")
         self.btn_shutdown.clicked.connect(self._shutdown)
         self.btn_stop = button("Force stop", danger=True, tip="Kill QEMU immediately")
         self.btn_stop.clicked.connect(self._force_stop)
         for b in (self.btn_primary, self.btn_start, self.btn_install,
-                  self.btn_shutdown, self.btn_stop):
+                  self.btn_hero_ssh, self.btn_shutdown, self.btn_stop):
             arow.addWidget(b)
         arow.addStretch()
         self.hero.add(arow)
         v.addWidget(self.hero)
 
-        # ---- stats ----
-        c = Card()
-        row = QHBoxLayout()
-        row.setSpacing(28)
-        self.stats = {k: Stat(lbl) for k, lbl in
-                      (("mem", "Memory"), ("cpu", "vCPUs"),
-                       ("res", "Resolution"), ("disk", "Disk"),
-                       ("uptime", "Uptime"))}
+        # ---- stats dashboard grid ----
+        stats_row = QHBoxLayout()
+        stats_row.setSpacing(12)
+        self.stats = {
+            "mem": Stat("Memory", f"{self.cfg.memory_mb // 1024} GB", icon="💾", sub="Allocated RAM"),
+            "cpu": Stat("vCPUs", str(self.cfg.cpus), icon="⚡", sub="Host Cores"),
+            "res": Stat("Resolution", f"{self.cfg.width}×{self.cfg.height}", icon="🖥", sub="virtio-vga 3D"),
+            "disk": Stat("Disk Usage", "—", icon="💿", sub="Allocated"),
+            "uptime": Stat("VM Uptime", "—", icon="⏱", sub="Session Active"),
+        }
         for st in self.stats.values():
-            row.addWidget(st)
-        row.addStretch()
-        c.add(row)
-        v.addWidget(c)
+            stats_row.addWidget(st, 1)
+        v.addLayout(stats_row)
 
         # ---- host load, so it is obvious what the VM costs Windows ----
         pal = theme.resolve(self.settings.theme)
-        cm = Card("Host load", "What the VM is currently costing Windows.")
+        cm = Card("Host Resource Load", "Real-time host impact of the virtualized environment.")
         self.meters = {
-            "ram": MeterBar("System memory", pal),
-            "disk": MeterBar("Free space on the VM drive", pal),
+            "ram": MeterBar("System Memory", pal, icon="🧠"),
+            "disk": MeterBar("VM Drive Free Space", pal, icon="💽"),
         }
         for m in self.meters.values():
             cm.add(m)
@@ -343,20 +374,14 @@ class MainWindow(QMainWindow):
 
         # ---- installer helper ----
         self.cmd_card = Card(
-            "Installer waiting for input",
-            "The live ISO boots to a root prompt. The app types this in for you; "
-            "use the button if it needs sending again.")
-        lbl = QLabel(INSTALL_CMD)
-        lbl.setObjectName("Cmd")
-        lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        lbl.setWordWrap(True)
-        self.cmd_card.add(lbl)
+            "Live Installer Automation",
+            "The live ISO boots to a root prompt. The app types the setup command for you automatically.")
+        self.snippet = CommandSnippet(INSTALL_CMD, title="bash / live-iso installer")
+        self.cmd_card.add(self.snippet)
         rr = QHBoxLayout()
-        bt = button("Type it into the VM", primary=True)
-        bt.clicked.connect(lambda: self._send(INSTALL_CMD + "\n"))
-        bc = button("Copy")
-        bc.clicked.connect(lambda: self._copy(INSTALL_CMD))
-        rr.addWidget(bt); rr.addWidget(bc); rr.addStretch()
+        bt = button("Type into VM Console", primary=True, tip="Send keystrokes via QEMU monitor")
+        bt.clicked.connect(self._send_install_cmd)
+        rr.addWidget(bt); rr.addStretch()
         self.cmd_card.add(rr)
         v.addWidget(self.cmd_card)
 
@@ -398,31 +423,67 @@ class MainWindow(QMainWindow):
         running = self.runner.is_running()
         installed = self._installed_cache
         if running and self.runner.install_mode:
-            self.hero_title.setText("Installing Arch")
+            self.hero_title.setText("Installing Arch Linux")
             self.hero_body.setText(
-                "The base system takes about 15 minutes. When it finishes, stop the "
-                "VM and press Start so it boots from disk instead of the ISO.")
-            self.hero_chip.setText("INSTALLING")
+                "The automated base install is in progress. When it finishes, the VM "
+                "powers off and reboots from disk to finish desktop configuration.")
+            self.hero_chip.set_status("installing", "INSTALLING")
+            if hasattr(self, "hero_progress"):
+                self.hero_progress.setVisible(True)
+            self.btn_primary.setVisible(False)
+            self.btn_start.setVisible(False)
+            self.btn_install.setVisible(False)
+            if hasattr(self, "btn_hero_ssh"):
+                self.btn_hero_ssh.setVisible(False)
+            self.btn_shutdown.setVisible(True)
+            self.btn_stop.setVisible(True)
         elif running:
-            self.hero_title.setText("Arch is running")
+            self.hero_title.setText("Arch Linux is running")
             self.hero_body.setText(
-                "Press Super to open the launcher, Super + / for every keybind. "
-                "Shut down from the guest rather than force-stopping when you can.")
-            self.hero_chip.setText("RUNNING")
+                "Press Super to open the launcher, Super + / for keybindings. "
+                "Open SSH to connect directly from Windows Terminal.")
+            self.hero_chip.set_status("running", "RUNNING")
+            if hasattr(self, "hero_progress"):
+                self.hero_progress.setVisible(False)
+            self.btn_primary.setVisible(False)
+            self.btn_start.setVisible(False)
+            self.btn_install.setVisible(False)
+            if hasattr(self, "btn_hero_ssh"):
+                self.btn_hero_ssh.setVisible(True)
+            self.btn_shutdown.setVisible(True)
+            self.btn_stop.setVisible(True)
         elif installed:
-            self.hero_title.setText("Arch is installed")
+            self.hero_title.setText("Arch Linux is ready")
             self.hero_body.setText(
-                "Press Start VM to boot it. The desktop build runs on first login "
-                "and can take 30 to 60 minutes the first time.")
-            self.hero_chip.setText("READY")
+                "Desktop environment is installed. Start the VM to boot into Hyprland "
+                "with the end4-pC Quickshell interface.")
+            self.hero_chip.set_status("ready", "READY")
+            if hasattr(self, "hero_progress"):
+                self.hero_progress.setVisible(False)
             self.btn_primary.setText("Start VM")
+            self.btn_primary.setVisible(True)
+            self.btn_start.setVisible(False)
+            self.btn_install.setVisible(True)
+            if hasattr(self, "btn_hero_ssh"):
+                self.btn_hero_ssh.setVisible(False)
+            self.btn_shutdown.setVisible(False)
+            self.btn_stop.setVisible(False)
         else:
             self.hero_title.setText("Ready to install")
             self.hero_body.setText(
                 "Press Install Arch. The VM boots and the installer command is typed "
-                "in for you — nothing else to do until it reboots.")
-            self.hero_chip.setText("NOT INSTALLED")
+                "in for you — automated install takes ~15 minutes.")
+            self.hero_chip.set_status("stopped", "NOT INSTALLED")
+            if hasattr(self, "hero_progress"):
+                self.hero_progress.setVisible(False)
             self.btn_primary.setText("Install Arch")
+            self.btn_primary.setVisible(True)
+            self.btn_start.setVisible(False)
+            self.btn_install.setVisible(False)
+            if hasattr(self, "btn_hero_ssh"):
+                self.btn_hero_ssh.setVisible(False)
+            self.btn_shutdown.setVisible(False)
+            self.btn_stop.setVisible(False)
 
     # ------------------------------------------------------------------ #
     def _page_hardware(self) -> QWidget:
@@ -511,15 +572,43 @@ class MainWindow(QMainWindow):
         c = Card("Account and locale")
         f = QFormLayout(); f.setSpacing(10)
         self.ed_user = QLineEdit(vals.get("USERNAME", "arch"))
+
+        pw_box1 = QWidget()
+        pw_lay1 = QHBoxLayout(pw_box1)
+        pw_lay1.setContentsMargins(0, 0, 0, 0)
+        pw_lay1.setSpacing(6)
         self.ed_pass = QLineEdit(vals.get("USERPASS", "arch"))
+        self.ed_pass.setEchoMode(QLineEdit.Password)
+        b_pass_show = button("Show", ghost=True)
+        b_pass_show.setFixedWidth(60)
+        b_pass_show.clicked.connect(lambda: self._toggle_echo(self.ed_pass, b_pass_show))
+        pw_lay1.addWidget(self.ed_pass, 1)
+        pw_lay1.addWidget(b_pass_show)
+
+        pw_box2 = QWidget()
+        pw_lay2 = QHBoxLayout(pw_box2)
+        pw_lay2.setContentsMargins(0, 0, 0, 0)
+        pw_lay2.setSpacing(6)
         self.ed_root = QLineEdit(vals.get("ROOTPASS", "arch"))
+        self.ed_root.setEchoMode(QLineEdit.Password)
+        b_root_show = button("Show", ghost=True)
+        b_root_show.setFixedWidth(60)
+        b_root_show.clicked.connect(lambda: self._toggle_echo(self.ed_root, b_root_show))
+        pw_lay2.addWidget(self.ed_root, 1)
+        pw_lay2.addWidget(b_root_show)
+
         self.ed_host = QLineEdit(vals.get("HOSTNAME", "arch-hypr"))
         self.ed_tz = QLineEdit(vals.get("TIMEZONE", "Asia/Kolkata"))
-        for w, n in ((self.ed_user, "Username"), (self.ed_pass, "User password"),
-                     (self.ed_root, "Root password"), (self.ed_host, "Hostname"),
-                     (self.ed_tz, "Timezone")):
-            a11y(w, n)
-            f.addRow(n, w)
+        a11y(self.ed_user, "Username")
+        f.addRow("Username", self.ed_user)
+        a11y(self.ed_pass, "User password")
+        f.addRow("User password", pw_box1)
+        a11y(self.ed_root, "Root password")
+        f.addRow("Root password", pw_box2)
+        a11y(self.ed_host, "Hostname")
+        f.addRow("Hostname", self.ed_host)
+        a11y(self.ed_tz, "Timezone")
+        f.addRow("Timezone", self.ed_tz)
         c.add(f)
         warn = QLabel("Stored as plain text inside seed.iso. Fine for a disposable VM; "
                       "change them with passwd if you keep it.")
@@ -554,9 +643,8 @@ class MainWindow(QMainWindow):
         page, v = self._page("Tools", "Getting text in, and managing the disk")
 
         c = Card("Send text to the VM",
-                 "QEMU has no host/guest clipboard, so this types the text in over the "
-                 "QEMU monitor. Click into the VM window first so the guest has "
-                 "keyboard focus.")
+                 "Direct text typing into the VM console via QEMU monitor. "
+                 "Useful during the live ISO installer before guest clipboard agents start.")
         self.ed_send = QTextEdit()
         self.ed_send.setObjectName("Mono")
         self.ed_send.setPlaceholderText("Paste text here, then send…")
@@ -592,11 +680,16 @@ class MainWindow(QMainWindow):
         self.lbl_disk = QLabel("—"); self.lbl_disk.setObjectName("CardHint")
         c3.add(self.lbl_disk)
         r3 = QHBoxLayout()
-        for text, fn in (("Refresh", self._disk_info),
-                         ("Snapshot", self._snapshot),
-                         ("List snapshots", self._snapshot_list),
-                         ("Open VM folder", lambda: self._open(paths.ROOT))):
-            b = button(text); b.clicked.connect(fn); r3.addWidget(b)
+        b_snap_mgr = button("Manage snapshots…", primary=True)
+        b_snap_mgr.clicked.connect(self._manage_snapshots)
+        b_quick_snap = button("Quick snapshot")
+        b_quick_snap.clicked.connect(self._snapshot)
+        b_open_vm = button("Open VM folder")
+        b_open_vm.clicked.connect(lambda: self._open(paths.ROOT))
+        b_disk_ref = button("Refresh")
+        b_disk_ref.clicked.connect(self._disk_info)
+        for b in (b_snap_mgr, b_quick_snap, b_open_vm, b_disk_ref):
+            r3.addWidget(b)
         r3.addStretch()
         c3.add(r3)
         r4 = QHBoxLayout()
@@ -699,10 +792,13 @@ class MainWindow(QMainWindow):
         rootrow = QHBoxLayout(); rootrow.setSpacing(8)
         self.lbl_root = QLabel(str(paths.ROOT)); self.lbl_root.setObjectName("CardHint")
         self.lbl_root.setWordWrap(True)
+        b_open_root = button("Open folder")
+        b_open_root.setToolTip("Open the VM data folder in Windows Explorer")
+        b_open_root.clicked.connect(lambda: self._open(paths.ROOT))
         b_root = button("Change…")
         b_root.setToolTip("Choose where virtual disks, ISOs and seed files are kept")
         b_root.clicked.connect(self._choose_vm_root)
-        rootrow.addWidget(self.lbl_root, 1); rootrow.addWidget(b_root)
+        rootrow.addWidget(self.lbl_root, 1); rootrow.addWidget(b_open_root); rootrow.addWidget(b_root)
         fl.addRow("VM data", rootrow)
         lq = QLabel(str(paths.QEMU_DIR) + ("" if paths.qemu_available() else "   (NOT FOUND)"))
         lq.setObjectName("CardHint"); lq.setWordWrap(True)
@@ -751,11 +847,6 @@ class MainWindow(QMainWindow):
     #  Wiring
     # ------------------------------------------------------------------ #
     def _wire(self) -> None:
-        self.btn_start.clicked.connect(lambda: self._start(False))
-        self.btn_install.clicked.connect(lambda: self._start(True))
-        self.btn_stop.clicked.connect(self._force_stop)
-        self.btn_shutdown.clicked.connect(self._shutdown)
-
         self.runner.output.connect(self._log)
         self.runner.failed.connect(self._error)
         self.runner.state_changed.connect(self._on_vm_state)
@@ -800,9 +891,11 @@ class MainWindow(QMainWindow):
                 depth=self.settings.gradient and not theme.high_contrast_active(),
                 grain=self.settings.gradient and not self.settings.reduce_motion,
             )
-        for card in self.findChildren(Card):
-            elevate(card, pal, enabled=self.settings.gradient
-                    and not theme.high_contrast_active())
+        elevated_types = (Card, Stat, CommandSnippet)
+        for widget in self.findChildren(QWidget):
+            if isinstance(widget, elevated_types):
+                elevate(widget, pal, enabled=self.settings.gradient
+                        and not theme.high_contrast_active())
         if hasattr(self, "meters"):
             for m in self.meters.values():
                 m.set_palette_(pal)
@@ -895,6 +988,7 @@ class MainWindow(QMainWindow):
         self.monitor.port = self.cfg.monitor_port
         self._log(f"[app] starting VM ({'install' if install else 'normal'} mode)")
         if self.runner.start(self.cfg, install):
+            self.monitor.port = self.cfg.monitor_port
             self._log("[app] " + self.runner.last_command())
         self._refresh()
 
@@ -1095,6 +1189,12 @@ class MainWindow(QMainWindow):
         self._boot_timer.timeout.connect(tick)
         self._boot_timer.start(1000)
 
+    def _send_install_cmd(self) -> None:
+        if hasattr(self, "_boot_timer") and self._boot_timer.isActive():
+            self._boot_timer.stop()
+            self.toast.show_message("Installer command sent.")
+        self._send(INSTALL_CMD + "\n")
+
     def run_setup_wizard(self) -> None:
         from .onboarding import Onboarding
         w = Onboarding(self.cfg, self.settings, self)
@@ -1106,11 +1206,14 @@ class MainWindow(QMainWindow):
     def _shutdown(self) -> None:
         if not self.runner.is_running():
             return
+        self.btn_shutdown.setEnabled(False)
         ok, _ = self.monitor.command("system_powerdown")
         if ok:
-            self.toast.show_message("Sent a shutdown request to the guest.")
+            self.toast.show_message("Shutdown requested. Guest is powering down…", 8000)
+            self.state_lbl.setText("Shutting down…")
             self._log("[app] system_powerdown sent")
         else:
+            self.btn_shutdown.setEnabled(True)
             self.toast.show_message("Could not reach the monitor; use Force stop.")
 
     def _force_stop(self) -> None:
@@ -1149,9 +1252,12 @@ class MainWindow(QMainWindow):
         self.toast.show_message(msg)
 
     def _open_ssh(self) -> None:
+        if not self.runner.is_running():
+            self.toast.show_message("Start the VM before opening an SSH session.")
+            return
         user = self.ed_user.text().strip() or "arch"
         port = self.sp_ssh.value()
-        cmd = f"ssh -o StrictHostKeyChecking=no -p {port} {user}@127.0.0.1"
+        cmd = f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o LogLevel=ERROR -p {port} {user}@127.0.0.1"
         if not shutil.which("ssh"):
             self._error("The Windows OpenSSH client is not installed.\n\n"
                         "Add it from Settings > System > Optional features.")
@@ -1230,14 +1336,144 @@ class MainWindow(QMainWindow):
         if self.runner.is_running():
             self.toast.show_message("Stop the VM before snapshotting.")
             return
-        name, ok = QInputDialog.getText(self, "Create snapshot", "Snapshot name:")
+        default_name = f"snap-{time.strftime('%Y%m%d-%H%M')}"
+        name, ok = QInputDialog.getText(self, "Create snapshot", "Snapshot name:", text=default_name)
         if ok and name.strip():
-            self._log("[qemu-img] " + qemu.qemu_img("snapshot", "-c", name.strip(), self.cfg.disk))
-            self.toast.show_message(f"Snapshot '{name.strip()}' created.")
+            clean_name = re.sub(r"[^a-zA-Z0-9_-]", "_", name.strip())
+            self._log("[qemu-img] " + qemu.qemu_img("snapshot", "-c", clean_name, self.cfg.disk))
+            self.toast.show_message(f"Snapshot '{clean_name}' created.")
+            self._disk_info()
 
     def _snapshot_list(self) -> None:
-        self._log("[qemu-img] " + qemu.qemu_img("snapshot", "-l", self.cfg.disk))
-        self._go(5)
+        self._manage_snapshots()
+
+    def _manage_snapshots(self) -> None:
+        if not Path(self.cfg.disk).exists():
+            self.toast.show_message("Virtual disk not found.")
+            return
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("VM Snapshots")
+        dlg.setModal(True)
+        dlg.setStyleSheet(self.styleSheet())
+        dlg.setMinimumSize(580, 400)
+        v = QVBoxLayout(dlg)
+        v.setSpacing(12)
+
+        lbl = QLabel(f"Snapshots for {Path(self.cfg.disk).name}")
+        lbl.setObjectName("CardTitle")
+        v.addWidget(lbl)
+
+        hint = QLabel("Snapshots capture disk state. Stop the VM before restoring or deleting snapshots.")
+        hint.setObjectName("CardHint")
+        v.addWidget(hint)
+
+        table = QTableWidget(0, 3)
+        table.setHorizontalHeaderLabels(["Name / Tag", "Created Date", "Size"])
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        table.setSelectionBehavior(QTableWidget.SelectRows)
+        table.setSelectionMode(QTableWidget.SingleSelection)
+        v.addWidget(table, 1)
+
+        def reload_table():
+            table.setRowCount(0)
+            out = qemu.qemu_img("snapshot", "-l", self.cfg.disk)
+            lines = [l.strip() for l in out.splitlines() if l.strip()]
+            header_passed = False
+            for line in lines:
+                if line.startswith("ID") and "TAG" in line:
+                    header_passed = True
+                    continue
+                if not header_passed:
+                    continue
+                parts = line.split()
+                if len(parts) >= 5:
+                    tag = parts[1]
+                    size = f"{parts[2]} {parts[3]}"
+                    date = f"{parts[4]} {parts[5]}" if len(parts) >= 6 else parts[4]
+                    row = table.rowCount()
+                    table.insertRow(row)
+                    table.setItem(row, 0, QTableWidgetItem(tag))
+                    table.setItem(row, 1, QTableWidgetItem(date))
+                    table.setItem(row, 2, QTableWidgetItem(size))
+
+        reload_table()
+
+        btn_row = QHBoxLayout()
+        b_create = button("New snapshot…")
+        b_restore = button("Restore selected", primary=True)
+        b_delete = button("Delete selected", danger=True)
+        b_close = button("Close")
+
+        def create_snap():
+            if self.runner.is_running():
+                self.toast.show_message("Stop the VM before creating a snapshot.")
+                return
+            default_name = f"snap-{time.strftime('%Y%m%d-%H%M')}"
+            name, ok = QInputDialog.getText(dlg, "Create snapshot", "Snapshot name:", text=default_name)
+            if ok and name.strip():
+                clean_name = re.sub(r"[^a-zA-Z0-9_-]", "_", name.strip())
+                self._log("[qemu-img] " + qemu.qemu_img("snapshot", "-c", clean_name, self.cfg.disk))
+                reload_table()
+                self._disk_info()
+                self.toast.show_message(f"Snapshot '{clean_name}' created.")
+
+        def restore_snap():
+            if self.runner.is_running():
+                QMessageBox.warning(dlg, "VM Running", "Stop the VM before restoring a snapshot.")
+                return
+            sel = table.selectedItems()
+            if not sel:
+                QMessageBox.information(dlg, "Select Snapshot", "Please select a snapshot to restore.")
+                return
+            tag = table.item(table.currentRow(), 0).text()
+            if QMessageBox.question(
+                    dlg, "Restore Snapshot",
+                    f"Restore virtual disk to snapshot '{tag}'?\n\n"
+                    "All changes made since this snapshot was created will be lost.",
+                    QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+                return
+            out = qemu.qemu_img("snapshot", "-a", tag, self.cfg.disk)
+            self._log(f"[qemu-img snapshot -a] {out}")
+            self.toast.show_message(f"Restored snapshot '{tag}'.")
+            self._disk_info()
+            dlg.accept()
+
+        def delete_snap():
+            if self.runner.is_running():
+                QMessageBox.warning(dlg, "VM Running", "Stop the VM before deleting a snapshot.")
+                return
+            sel = table.selectedItems()
+            if not sel:
+                QMessageBox.information(dlg, "Select Snapshot", "Please select a snapshot to delete.")
+                return
+            tag = table.item(table.currentRow(), 0).text()
+            if QMessageBox.question(
+                    dlg, "Delete Snapshot",
+                    f"Permanently delete snapshot '{tag}'?",
+                    QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+                return
+            out = qemu.qemu_img("snapshot", "-d", tag, self.cfg.disk)
+            self._log(f"[qemu-img snapshot -d] {out}")
+            reload_table()
+            self._disk_info()
+            self.toast.show_message(f"Deleted snapshot '{tag}'.")
+
+        b_create.clicked.connect(create_snap)
+        b_restore.clicked.connect(restore_snap)
+        b_delete.clicked.connect(delete_snap)
+        b_close.clicked.connect(dlg.reject)
+
+        btn_row.addWidget(b_create)
+        btn_row.addWidget(b_restore)
+        btn_row.addWidget(b_delete)
+        btn_row.addStretch()
+        btn_row.addWidget(b_close)
+        v.addLayout(btn_row)
+
+        dlg.exec()
 
     def _reset_disk(self) -> None:
         if self.runner.is_running():
@@ -1330,7 +1566,13 @@ class MainWindow(QMainWindow):
         self.btn_primary.setEnabled(not run)
         self.btn_stop.setEnabled(run)
         self.btn_shutdown.setEnabled(run)
+        if hasattr(self, "btn_hero_ssh"):
+            self.btn_hero_ssh.setEnabled(run)
         self.cmd_card.setVisible(run and self.runner.install_mode)
+
+        if hasattr(self, "sp_mem"):
+            for w in (self.sp_mem, self.sp_cpu, self.cb_accel, self.cb_gpu, self.cb_disp, self.sp_w, self.sp_h, self.sp_ssh):
+                w.setEnabled(not run)
 
         # Re-probe the guest occasionally rather than every tick - qemu-img
         # spawns a process and this runs on a timer.
@@ -1340,15 +1582,19 @@ class MainWindow(QMainWindow):
         self._refresh_hero()
 
         if hasattr(self, "stats"):
-            self.stats["mem"].set(f"{self.cfg.memory_mb // 1024} GB")
-            self.stats["cpu"].set(str(self.cfg.cpus))
-            self.stats["res"].set(f"{self.cfg.width}×{self.cfg.height}")
+            self.stats["mem"].set(f"{self.cfg.memory_mb // 1024} GB", "Allocated RAM")
+            self.stats["cpu"].set(str(self.cfg.cpus), "Host Cores")
+            self.stats["res"].set(f"{self.cfg.width}×{self.cfg.height}", self.cfg.gpu)
+            if self._tick % 12 == 1 or self.stats["disk"].value.text() in ("-", "", "—"):
+                _v, alloc = qemu.disk_summary(self.cfg.disk)
+                disp_alloc = alloc if alloc not in ("-", "disk not found") else "0 GB"
+                self.stats["disk"].set(disp_alloc, "Virtual Disk")
             if self._vm_started_at:
                 secs = int(time.time() - self._vm_started_at)
                 h, m = divmod(secs // 60, 60)
-                self.stats["uptime"].set(f"{h}:{m:02d}" if h else f"{secs // 60}m")
+                self.stats["uptime"].set(f"{h}:{m:02d}" if h else f"{secs // 60}m", "Session Active")
             else:
-                self.stats["uptime"].set("—")
+                self.stats["uptime"].set("—", "VM Stopped")
 
         if hasattr(self, "meters") and self._tick % 3 == 1:
             self._refresh_meters()
