@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# Stage 2: runs inside arch-chroot. System config, user, bootloader.
+set -euo pipefail
+source /root/seed/vm.conf
+
+echo "==> Timezone / clock"
+ln -sf "/usr/share/zoneinfo/$TIMEZONE" /etc/localtime
+hwclock --systohc
+
+echo "==> Locale"
+sed -i "s/^#\(${LOCALE} UTF-8\)/\1/" /etc/locale.gen
+locale-gen
+echo "LANG=$LOCALE" > /etc/locale.conf
+echo "KEYMAP=$KEYMAP" > /etc/vconsole.conf
+# Explicit X11/Wayland keymap so Shift+digit symbols map correctly.
+mkdir -p /etc/X11/xorg.conf.d
+cat > /etc/X11/xorg.conf.d/00-keyboard.conf <<EOF
+Section "InputClass"
+    Identifier "system-keyboard"
+    MatchIsKeyboard "on"
+    Option "XkbLayout" "$KEYMAP"
+    Option "XkbModel" "pc105"
+EndSection
+EOF
+
+echo "==> Hostname"
+echo "$HOSTNAME" > /etc/hostname
+cat > /etc/hosts <<EOF
+127.0.0.1   localhost
+::1         localhost
+127.0.1.1   $HOSTNAME.localdomain $HOSTNAME
+EOF
+
+echo "==> zram swap"
+cat > /etc/systemd/zram-generator.conf <<'EOF'
+[zram0]
+zram-size = ram / 2
+compression-algorithm = zstd
+EOF
+
+echo "==> Users"
+echo "root:$ROOTPASS" | chpasswd
+id -u "$USERNAME" &>/dev/null || useradd -m -G wheel -s /bin/bash "$USERNAME"
+echo "$USERNAME:$USERPASS" | chpasswd
+echo "%wheel ALL=(ALL:ALL) ALL" > /etc/sudoers.d/10-wheel
+chmod 440 /etc/sudoers.d/10-wheel
+
+# Temporary passwordless sudo so the first-boot desktop install is unattended.
+# firstboot.sh deletes this file when it finishes.
+echo "$USERNAME ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/99-firstboot-tmp
+chmod 440 /etc/sudoers.d/99-firstboot-tmp
+
+echo "==> initramfs (virtio modules)"
+sed -i 's/^MODULES=()/MODULES=(virtio virtio_blk virtio_pci virtio_net virtio_gpu)/' /etc/mkinitcpio.conf
+mkinitcpio -P
+
+echo "==> systemd-boot"
+bootctl --path=/boot install
+ROOT_UUID=$(blkid -s UUID -o value /dev/vda2)
+cat > /boot/loader/loader.conf <<'EOF'
+default arch.conf
+timeout 3
+console-mode max
+editor no
+EOF
+cat > /boot/loader/entries/arch.conf <<EOF
+title   Arch Linux (Hyprland)
+linux   /vmlinuz-linux
+initrd  /initramfs-linux.img
+options root=UUID=$ROOT_UUID rw quiet
+EOF
+
+echo "==> Services"
+systemctl enable NetworkManager
+systemctl enable qemu-guest-agent
+# SSH lets you paste commands in from Windows (host localhost:2222).
+systemctl enable sshd
+# spice-vdagent gives clipboard sync when a SPICE channel is present.
+systemctl enable spice-vdagentd 2>/dev/null || true
+
+echo "==> Staging first-boot desktop installer"
+mkdir -p "/home/$USERNAME/.local/share" "/home/$USERNAME/.local/state" "/home/$USERNAME/.config"
+# chown the whole tree - "install -d" only owns the final component,
+# which left .local root-owned and broke the first-boot install.
+chown -R "$USERNAME:$USERNAME" "/home/$USERNAME"
+cp /root/seed/firstboot.sh "/home/$USERNAME/firstboot.sh"
+cp /root/seed/vm.conf      "/home/$USERNAME/.vm.conf"
+chown "$USERNAME:$USERNAME" "/home/$USERNAME/firstboot.sh" "/home/$USERNAME/.vm.conf"
+chmod +x "/home/$USERNAME/firstboot.sh"
+
+# Auto-run the desktop install once, on first interactive login.
+cat >> "/home/$USERNAME/.bash_profile" <<'EOF'
+
+# --- one-shot desktop install ---
+if [ ! -f "$HOME/.local/share/hypr-setup-done" ] && [ -x "$HOME/firstboot.sh" ]; then
+  "$HOME/firstboot.sh"
+fi
+EOF
+chown "$USERNAME:$USERNAME" "/home/$USERNAME/.bash_profile"
+
+echo "==> Stage 2 complete"
