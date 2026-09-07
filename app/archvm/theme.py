@@ -54,6 +54,11 @@ class Palette:
     bloom_b: str
     bloom_c: str
     base: str
+    rail: str
+    rail_text: str
+    rail_muted: str
+    rail_active: str
+    teal: str
 
 
 LIGHT = Palette(
@@ -67,6 +72,8 @@ LIGHT = Palette(
     shadow="#8fa3c8", focus="#1f5fd8",
     bloom_a="#7aa5ff", bloom_b="#b79bff", bloom_c="#8fd8ff",
     base="#e9eefb",
+    rail="#161c2e", rail_text="#e8edf8", rail_muted="#7b87a6",
+    rail_active="#1f2a44", teal="#12b5aa",
 )
 
 DARK = Palette(
@@ -80,6 +87,8 @@ DARK = Palette(
     shadow="#000000", focus="#7aa9ff",
     bloom_a="#2d4a9e", bloom_b="#4c2f8f", bloom_c="#12507a",
     base="#0b0e17",
+    rail="#0e1322", rail_text="#e8edf8", rail_muted="#7b87a6",
+    rail_active="#1a2338", teal="#2dd4c4",
 )
 
 
@@ -303,30 +312,59 @@ QToolTip {{
     border: {bw} solid {p.border}; border-radius: 8px; padding: 7px 10px;
 }}
 
-/* ---------------- sidebar ---------------- */
+/* ---------------- navigation rail ---------------- */
 #Sidebar {{
-    background: {_rgba(p.panel, rail)};
-    border-right: {bw} solid {p.border_soft};
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 {p.rail}, stop:1 {_darken(p.rail, 22)});
+    border: none;
 }}
-#Brand    {{ font-size: {px(16.5)}; font-weight: 800; color: {p.text};
+#Sidebar QLabel {{ color: {p.rail_text}; }}
+#Brand    {{ font-size: {px(15)}; font-weight: 800; color: {p.rail_text};
              letter-spacing: -0.2px; }}
-#BrandSub {{ font-size: {px(11)}; color: {p.muted}; }}
+#BrandSub {{ font-size: {px(10.5)}; color: {p.rail_muted}; }}
+#RailFoot {{ font-size: {px(10.5)}; color: {p.rail_muted};
+             font-weight: 700; letter-spacing: 0.4px; }}
+#SectionLabel {{
+    font-size: {px(9.5)}; font-weight: 800; color: {p.rail_muted};
+    letter-spacing: 1.1px; padding: 0 4px;
+}}
+#RailRule {{ background: {_rgba(p.rail_text, '0.10')}; max-height: 1px;
+             border: none; }}
 
 QPushButton#Nav {{
-    background: transparent; border: {bw} solid transparent;
-    border-radius: 10px; padding: 11px 13px; text-align: left;
-    color: {p.text_soft}; font-size: {px(13)}; font-weight: 600;
+    background: transparent; border: none;
+    border-left: 3px solid transparent;
+    border-radius: 8px; padding: 9px 12px; text-align: left;
+    color: {p.rail_muted}; font-size: {px(12.5)}; font-weight: 600;
 }}
 QPushButton#Nav:hover {{
-    background: {_rgba(p.card_hi, '0.95')}; color: {p.text};
-    border-color: {p.border_soft};
+    background: {_rgba(p.rail_text, '0.07')}; color: {p.rail_text};
 }}
 QPushButton#Nav:checked {{
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 {_rgba(a, '0.18')}, stop:1 {_rgba(BRAND_B, '0.10')});
-    color: {p.text}; border-color: {_rgba(a, '0.34')}; font-weight: 700;
+    background: {p.rail_active}; color: {p.rail_text};
+    border-left: 3px solid {p.teal}; font-weight: 700;
 }}
-QPushButton#Nav:focus {{ border-color: {p.focus}; outline: none; }}
+QPushButton#Nav:focus {{ border-left-color: {p.teal}; outline: none; }}
+
+QPushButton#Help {{
+    background: {_rgba(p.teal, '0.16')};
+    border: 2px solid {_rgba(p.teal, '0.55')};
+    border-radius: 19px; color: {p.teal};
+    font-size: {px(16)}; font-weight: 800; padding: 0;
+}}
+QPushButton#Help:hover {{ background: {p.teal}; color: #06232b;
+                          border-color: {p.teal}; }}
+
+/* ---------------- alert bar ---------------- */
+#AlertBar {{ background: {p.red}; border: none; }}
+#AlertBar QLabel {{ color: #ffffff; font-weight: 650; }}
+#AlertBar QPushButton {{
+    background: {_rgba('#000000', '0.18')}; border: none; color: #ffffff;
+    border-radius: 7px; padding: 5px 12px; font-weight: 650;
+}}
+#AlertBar QPushButton:hover {{ background: {_rgba('#000000', '0.30')}; }}
+#AlertBarOk {{ background: {p.teal}; }}
+#AlertBarWarn {{ background: {p.amber}; }}
 
 /* ---------------- cards ---------------- */
 #Card {{
@@ -384,20 +422,19 @@ QPushButton:disabled {{
 
 QPushButton#Primary {{
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 {a}, stop:1 {BRAND_B});
-    border: {bw} solid {_rgba(a, '0.85')};
-    color: {p.on_accent}; font-weight: 700;
+        stop:0 {p.teal}, stop:1 {_darken(p.teal, 18)});
+    border: {bw} solid {_rgba(p.teal, '0.85')};
+    color: #ffffff; font-weight: 700;
 }}
 QPushButton#Primary:hover {{
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 {_lighten(a, 12)}, stop:1 {_lighten(BRAND_B, 12)});
+        stop:0 {_lighten(p.teal, 12)}, stop:1 {p.teal});
 }}
 QPushButton#Primary:pressed {{
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 {_darken(a, 12)}, stop:1 {_darken(BRAND_B, 12)});
+    background: {_darken(p.teal, 20)};
 }}
 QPushButton#Primary:disabled {{
-    background: {_rgba(a, '0.32')}; border-color: transparent;
+    background: {_rgba(p.teal, '0.32')}; border-color: transparent;
     color: {_rgba(p.on_accent, '0.75')};
 }}
 QPushButton#Danger {{

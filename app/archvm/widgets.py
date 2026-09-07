@@ -301,3 +301,68 @@ def elevate(widget: QWidget, palette, *, blur: int = 30, y: int = 6,
         widget.setGraphicsEffect(eff)
     except Exception:
         pass
+
+
+class AlertBar(QFrame):
+    """
+    Full-width status strip pinned above the content, as in the reference
+    layout. Used for connection and process failures that deserve more than a
+    toast but should not steal focus with a modal.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("AlertBar")
+        self.setVisible(False)
+        self.setFixedHeight(42)
+        self._action_slot = None
+        h = QHBoxLayout(self)
+        h.setContentsMargins(20, 0, 12, 0)
+        h.setSpacing(10)
+
+        self.label = QLabel("")
+        self.label.setAccessibleName("Alert")
+        self.label.setWordWrap(False)
+        h.addWidget(self.label, 1)
+
+        self.action = QPushButton("")
+        self.action.setVisible(False)
+        self.action.setCursor(Qt.PointingHandCursor)
+        h.addWidget(self.action)
+
+        close = QPushButton("Dismiss")
+        close.setCursor(Qt.PointingHandCursor)
+        close.clicked.connect(lambda: self.setVisible(False))
+        h.addWidget(close)
+
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(lambda: self.setVisible(False))
+
+    def show_alert(self, text: str, *, kind: str = "error", msec: int = 0,
+                   action: str = "", on_action=None) -> None:
+        self.setObjectName({"error": "AlertBar",
+                            "ok": "AlertBarOk",
+                            "warn": "AlertBarWarn"}.get(kind, "AlertBar"))
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.label.setText(text)
+        self.label.setAccessibleDescription(text)
+
+        if self._action_slot is not None:
+            try:
+                self.action.clicked.disconnect(self._action_slot)
+            except (TypeError, RuntimeError):
+                pass
+            self._action_slot = None
+        if action and on_action:
+            self.action.setText(action)
+            self.action.setVisible(True)
+            self._action_slot = lambda: (self.setVisible(False), on_action())
+            self.action.clicked.connect(self._action_slot)
+        else:
+            self.action.setVisible(False)
+
+        self.setVisible(True)
+        if msec:
+            self._timer.start(msec)
