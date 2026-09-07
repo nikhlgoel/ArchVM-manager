@@ -1,12 +1,14 @@
 """Reusable widgets. Every one sets accessible names so screen readers work."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer, Signal, QPropertyAnimation, Property
-from PySide6.QtGui import QPainter, QColor, QBrush, QPen
+from PySide6.QtCore import Qt, QTimer, Signal, QRectF
+from PySide6.QtGui import QPainter, QColor, QBrush, QPen, QFont
 from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget,
     QGraphicsDropShadowEffect, QSizePolicy, QLayout,
 )
+
+from . import theme
 
 
 def a11y(widget: QWidget, name: str, description: str = "") -> QWidget:
@@ -193,3 +195,109 @@ def button(text: str, *, primary: bool = False, danger: bool = False,
     a11y(b, text, tip or label)
     b.setCursor(Qt.PointingHandCursor)
     return b
+
+
+class Backdrop(QWidget):
+    """
+    The painted background: layered blooms, grain and a vignette.
+
+    Kept as its own widget so the whole window does not repaint when a child
+    changes, and so the effect can be switched off wholesale for high contrast
+    or reduced-motion preferences.
+    """
+
+    def __init__(self, palette, parent=None):
+        super().__init__(parent)
+        self.setObjectName("Backdrop")
+        self.setAttribute(Qt.WA_StyledBackground, False)
+        self._pal = palette
+        self._depth = True
+        self._grain = True
+
+    def set_palette_(self, palette, depth: bool = True, grain: bool = True) -> None:
+        self._pal = palette
+        self._depth = depth
+        self._grain = grain
+        self.update()
+
+    def paintEvent(self, _e) -> None:
+        p = QPainter(self)
+        theme.paint_backdrop(p, QRectF(self.rect()), self._pal,
+                             depth=self._depth, grain=self._grain)
+
+
+class Chip(QLabel):
+    """A small pill for status words and counts."""
+
+    def __init__(self, text: str = "", parent=None):
+        super().__init__(text, parent)
+        self.setObjectName("Chip")
+        self.setAlignment(Qt.AlignCenter)
+
+
+class MeterBar(QWidget):
+    """A slim labelled usage bar - used for host memory and disk."""
+
+    def __init__(self, label: str, palette, parent=None):
+        super().__init__(parent)
+        self._pal = palette
+        self._frac = 0.0
+        self._text = ""
+        self.setFixedHeight(38)
+        self._label = label
+        self.setAccessibleName(label)
+
+    def set_palette_(self, palette) -> None:
+        self._pal = palette
+        self.update()
+
+    def set_value(self, fraction: float, text: str) -> None:
+        self._frac = max(0.0, min(1.0, fraction))
+        self._text = text
+        self.setAccessibleDescription(f"{self._label}: {text}")
+        self.update()
+
+    def paintEvent(self, _e) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        pal = self._pal
+        f = QFont(self.font()); f.setPointSizeF(max(7.5, f.pointSizeF() - 1.0))
+        p.setFont(f)
+        p.setPen(QColor(pal.muted))
+        p.drawText(0, 0, self.width(), 15, Qt.AlignLeft | Qt.AlignVCenter, self._label)
+        p.drawText(0, 0, self.width(), 15, Qt.AlignRight | Qt.AlignVCenter, self._text)
+
+        track = QRectF(0, 21, self.width(), 7)
+        p.setPen(Qt.NoPen)
+        p.setBrush(QBrush(QColor(pal.border_soft)))
+        p.drawRoundedRect(track, 3.5, 3.5)
+
+        if self._frac > 0:
+            fill = QRectF(track)
+            fill.setWidth(track.width() * self._frac)
+            colour = pal.accent
+            if self._frac > 0.9:
+                colour = pal.red
+            elif self._frac > 0.75:
+                colour = pal.amber
+            p.setBrush(QBrush(QColor(colour)))
+            p.drawRoundedRect(fill, 3.5, 3.5)
+
+
+def elevate(widget: QWidget, palette, *, blur: int = 30, y: int = 6,
+            alpha: int = 44, enabled: bool = True) -> None:
+    """Soft drop shadow. Silently skipped if effects are unavailable."""
+    if not enabled:
+        widget.setGraphicsEffect(None)
+        return
+    try:
+        eff = QGraphicsDropShadowEffect(widget)
+        eff.setBlurRadius(blur)
+        eff.setXOffset(0)
+        eff.setYOffset(y)
+        c = QColor(palette.shadow)
+        c.setAlpha(alpha)
+        eff.setColor(c)
+        widget.setGraphicsEffect(eff)
+    except Exception:
+        pass
