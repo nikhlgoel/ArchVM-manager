@@ -83,9 +83,13 @@ Grab the latest build from the [releases page](https://github.com/nikhlgoel/Arch
 
 | File | Use it when |
 |---|---|
-| `ArchVM-<version>-windows-x64.zip` | **Recommended.** Unzip anywhere and run `ArchVM.exe`. Starts fast. |
-| `ArchVM-<version>-windows-x64-portable.exe` | A single self-contained file. Tidier, a few seconds slower to start. |
+| `ArchVM-<version>-windows-x64-setup.exe` | **Recommended.** Installs properly: Start Menu entry, optional desktop shortcut, uninstaller in Add/Remove Programs. Per-user by default, so no UAC prompt; choose system-wide during setup if you prefer. |
+| `ArchVM-<version>-windows-x64.zip` | Portable. Unzip anywhere and run `ArchVM.exe`. Touches nothing outside the folder. |
+| `ArchVM-<version>-windows-x64-portable.exe` | Portable, single file. Tidiest, a few seconds slower to start. |
 | `seed-<version>.iso` | Only if you are rebuilding the seed ISO by hand. The app generates its own. |
+
+Uninstalling leaves your VM disks and ISOs alone, and asks before removing
+settings in `%APPDATA%\ArchVM`.
 
 Verify your download against `SHA256SUMS.txt`:
 
@@ -137,6 +141,8 @@ app/            the desktop application
                 deps (environment detection), onboarding (setup wizard)
   build.py      icon generation + PyInstaller + shortcuts
   run.py        source-tree launcher
+  installer/    archvm.iss - the Inno Setup installer definition
+  tools/        icon generators and the offscreen smoke test
 seed/           the three-stage Arch installer that runs inside the VM
 manager/        build_seed.py — packs the installer scripts into seed.iso
 docs/           VM guide, code-signing guide, screenshots

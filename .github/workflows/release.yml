@@ -56,6 +56,15 @@ jobs:
           Copy-Item seed/vm.conf.example seed/vm.conf
           python manager/build_seed.py
 
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}/Inno Setup 6/ISCC.exe"
+          & $iscc /DAppVersion=${{ steps.v.outputs.version }} app/installer/archvm.iss
+
       - name: Package
         shell: pwsh
         run: |

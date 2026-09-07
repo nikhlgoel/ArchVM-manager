@@ -30,8 +30,12 @@ First public release.
 - **Animated startup splash** built around the application mark.
 - **Accessibility throughout** — accessible names on every control, 80–160% text
   scaling, reduce-motion, full keyboard operation and high-contrast support.
-- **PyInstaller packaging** with generated icons, Desktop and Start Menu
-  shortcuts, and optional Authenticode signing via `build.py --sign`.
+- **Windows installer** (Inno Setup) with a Start Menu entry, optional desktop
+  shortcut and an uninstaller in Add/Remove Programs. Installs per-user
+  without a UAC prompt, or system-wide on request. Uninstalling never
+  touches VM disks and asks before removing settings.
+- **PyInstaller packaging** with generated icons, portable zip and single-file
+  builds, and optional Authenticode signing via `build.py --sign`.
 - Documentation: VM guide, application reference and a code-signing guide.
 
 ### Fixed
