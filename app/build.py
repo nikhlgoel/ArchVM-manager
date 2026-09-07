@@ -49,12 +49,85 @@ def make_icon() -> bool:
         return False
 
 
+def running_instances() -> list[int]:
+    """PIDs of any running ArchVM.exe. They hold locks on the bundle."""
+    try:
+        r = subprocess.run(["tasklist", "/FI", f"IMAGENAME eq {NAME}.exe",
+                            "/FO", "CSV", "/NH"],
+                           capture_output=True, text=True, timeout=20)
+        pids = []
+        for line in (r.stdout or "").splitlines():
+            parts = [x.strip('"') for x in line.split('","')]
+            if len(parts) > 1 and parts[0].lower() == f"{NAME.lower()}.exe":
+                try:
+                    pids.append(int(parts[1]))
+                except ValueError:
+                    pass
+        return pids
+    except Exception:
+        return []
+
+
+def stop_instances() -> bool:
+    """
+    Close running copies before touching dist/.
+
+    A half-deleted bundle is worse than no bundle: the launcher still exists,
+    the interpreter does not, and the user gets "Failed to start embedded
+    python interpreter". Refusing to build is the safer failure.
+    """
+    pids = running_instances()
+    if not pids:
+        return True
+    log(f"{NAME} is running (pid {', '.join(map(str, pids))}) and holds the bundle open.")
+    for pid in pids:
+        subprocess.run(["taskkill", "/PID", str(pid), "/F"],
+                       capture_output=True, text=True)
+    import time
+    for _ in range(20):
+        if not running_instances():
+            log("closed running instances")
+            return True
+        time.sleep(0.25)
+    log("could not close them - close the app and try again")
+    return False
+
+
+def verify(exe: Path) -> bool:
+    """Confirm the bundle actually holds an interpreter before declaring success."""
+    if not exe.exists():
+        log(f"missing executable: {exe}")
+        return False
+    internal = exe.parent / "_internal"
+    if internal.exists():
+        needed = ["base_library.zip"]
+        missing = [n for n in needed if not (internal / n).exists()]
+        if not list(internal.glob("python3*.dll")):
+            missing.append("python3*.dll")
+        if not (internal / "PySide6" / "plugins" / "platforms" / "qwindows.dll").exists():
+            missing.append("qwindows.dll")
+        if missing:
+            log("bundle is INCOMPLETE, missing: " + ", ".join(missing))
+            return False
+    log("bundle verified")
+    return True
+
+
 def build(onefile: bool = False, clean: bool = False) -> Path | None:
+    if not stop_instances():
+        return None
+
     if clean:
         for d in (DIST, WORK):
+            if not d.exists():
+                continue
+            log(f"removing {d}")
+            shutil.rmtree(d, ignore_errors=True)
             if d.exists():
-                log(f"removing {d}")
-                shutil.rmtree(d, ignore_errors=True)
+                # A partial delete leaves a bundle that launches but cannot
+                # start - do not hand that to the user.
+                log(f"could not fully remove {d}; close anything using it")
+                return None
 
     args = [
         sys.executable, "-m", "PyInstaller",
@@ -93,6 +166,8 @@ def build(onefile: bool = False, clean: bool = False) -> Path | None:
     exe = DIST / (f"{NAME}.exe" if onefile else f"{NAME}/{NAME}.exe")
     if not exe.exists():
         log(f"expected executable missing: {exe}")
+        return None
+    if not verify(exe):
         return None
     size = exe.stat().st_size / (1024 * 1024)
     log(f"built {exe}  ({size:.1f} MB)")
