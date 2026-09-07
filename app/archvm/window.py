@@ -448,7 +448,7 @@ class MainWindow(QMainWindow):
         a11y(self.cb_gpu, "GPU device", "virtio-vga-gl enables virgl 3D acceleration")
         f2.addRow("GPU device", self.cb_gpu)
         self.cb_disp = QComboBox()
-        self.cb_disp.addItems(["gtk,gl=on", "sdl,gl=on", "gtk,gl=off", "sdl"])
+        self.cb_disp.addItems(["gtk,gl=on", "gtk", "gtk,gl=es"])
         self.cb_disp.setCurrentText(self.cfg.display)
         a11y(self.cb_disp, "Display backend", "GTK releases keyboard grabs more reliably on Windows")
         f2.addRow("Backend", self.cb_disp)
@@ -749,6 +749,7 @@ class MainWindow(QMainWindow):
         self.runner.output.connect(self._log)
         self.runner.failed.connect(self._error)
         self.runner.state_changed.connect(self._on_vm_state)
+        self.runner.gl_crashed.connect(self._on_gl_crashed)
 
         self.monitor.finished.connect(self._send_done)
         self.monitor.progress.connect(self._send_progress)
@@ -883,6 +884,52 @@ class MainWindow(QMainWindow):
         if self.runner.start(self.cfg, install):
             self._log("[app] " + self.runner.last_command())
         self._refresh()
+
+    def _on_gl_crashed(self, ran_for: float) -> None:
+        """
+        QEMU crashed inside its OpenGL path. Retreat to the display combination
+        that cannot crash, once, and say so plainly.
+
+        This is not something the setup wizard can pre-empt: the crash needs a
+        guest actively submitting virgl commands, so a probe that merely starts
+        QEMU and stops it passes every time.
+        """
+        if not self.cfg.fall_back_to_software():
+            self._error(
+                "QEMU crashed even without 3D acceleration. This is a problem "
+                "with the QEMU build rather than the VM configuration - see the "
+                "Logs page for the exit code.")
+            return
+
+        self.cfg.save()
+        self.settings.gl_unusable = True      # so the wizard stops promising 3D
+        self.settings.save()
+        if hasattr(self, "cb_disp"):
+            self.cb_disp.setCurrentText(self.cfg.display)
+        if hasattr(self, "cb_gpu"):
+            self.cb_gpu.setCurrentText(self.cfg.gpu)
+
+        self._log("[app] switched to %s + %s after the GL crash"
+                  % (self.cfg.display, self.cfg.gpu))
+        self._await_first_boot = False
+
+        QMessageBox.warning(
+            self, "3D acceleration is not usable on this PC",
+            "QEMU crashed %.0f seconds after starting, inside its OpenGL "
+            "path.\n\n"
+            "This QEMU build cannot share the rendered image with its own "
+            "window on your system, and it crashes instead of falling back. "
+            "Nothing is wrong with your PC or your VM.\n\n"
+            "Graphics have been switched to %s + %s, which is stable. The "
+            "desktop will run, drawn on the CPU rather than the GPU - so "
+            "animations and blur will be slower.\n\n"
+            "You can try 3D again from the Hardware page after updating QEMU."
+            % (ran_for, self.cfg.display, self.cfg.gpu))
+
+        if QMessageBox.question(
+                self, paths.APP_NAME, "Start the VM again now?",
+                QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
+            QTimer.singleShot(600, lambda: self._start(False))
 
     def _on_vm_state(self, state: str) -> None:
         """
@@ -1149,21 +1196,16 @@ class MainWindow(QMainWindow):
             self._error(f"Could not write vm.conf: {e}")
             return
 
-        builder = paths.ROOT / "manager" / "build_seed.py"
-        if not builder.exists():
-            self._error(f"Seed builder not found at {builder}")
-            return
-        try:
-            r = subprocess.run([sys.executable, str(builder)], capture_output=True,
-                               text=True, timeout=120,
-                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-            self._log(r.stdout + r.stderr)
-            if r.returncode == 0:
-                self.toast.show_message("seed.iso rebuilt with your settings.")
-            else:
-                self._error(r.stderr or "Seed build failed.")
-        except Exception as e:
-            self._error(f"Seed build failed: {e}")
+        # In-process: a frozen build has no build_seed.py, and sys.executable
+        # is ArchVM.exe there, so shelling out relaunched the app instead.
+        from . import seedbuild
+        paths.deploy_seed_scripts()
+        ok, msg = seedbuild.build()
+        self._log("[seed] " + msg)
+        if ok:
+            self.toast.show_message("seed.iso rebuilt with your settings.")
+        else:
+            self._error(msg)
 
     def _disk_info(self) -> None:
         virt, alloc = qemu.disk_summary(self.cfg.disk)

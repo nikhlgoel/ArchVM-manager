@@ -153,6 +153,17 @@ def build(onefile: bool = False, clean: bool = False) -> Path | None:
         "--exclude-module", "numpy",
         "--hidden-import", "archvm",
     ]
+
+    # The installer scripts have to travel with the executable. Without
+    # them the app can detect QEMU, download the ISO and create a disk,
+    # and then cannot install anything - which is exactly what a user
+    # who installed from the .exe rather than the repo would hit.
+    seed = APP_DIR.parent / "seed"
+    for f in sorted(seed.glob("*.sh")) + [seed / "vm.conf.example"]:
+        if f.exists():
+            args += ["--add-data", f"{f}{os.pathsep}seed"]
+            log(f"bundling seed/{f.name}")
+
     if ICO.exists():
         args += ["--icon", str(ICO)]
     args += ["--onefile"] if onefile else ["--onedir"]

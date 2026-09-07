@@ -81,6 +81,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     paths.ensure_dirs()
+    # Ship-with-the-app installer scripts, refreshed on every start so an
+    # update actually reaches them.
+    paths.deploy_seed_scripts()
     settings = AppSettings.load()
 
     # Splash covers the first-run work: reading the host, building the window.

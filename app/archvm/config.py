@@ -34,6 +34,13 @@ def _save_json(p: Path, data: dict) -> bool:
         return False
 
 
+# The display path that always works. virgl (virtio-vga-gl) is the fast path
+# but it crashes QEMU outright on some Windows builds - the GTK GL area has no
+# DMABUF support there, and the fallback blit dereferences a null texture - so
+# the app has to be able to retreat to this.
+SAFE_DISPLAY = "gtk"
+SAFE_GPU = "virtio-vga"
+
 class _Base:
     """Shared load/save that ignores unknown keys instead of crashing."""
 
@@ -88,6 +95,15 @@ class VMConfig(_Base):
     username: str = "arch"
 
     def __post_init__(self) -> None:
+        # QEMU's SDL backend services its window on the emulation thread here,
+        # so the window stops answering Windows under any real load and is
+        # declared "not responding" - measured hung for 77% of samples with GL
+        # and 64% without. GTK does not do this. Migrate saved configs across;
+        # unlike the GL crash there is no exit code to react to, because a
+        # stalled window never exits.
+        if self.display.startswith("sdl"):
+            self.display = "gtk" + self.display[3:]
+
         # Fill path defaults lazily so they follow paths.ROOT
         self.disk = self.disk or str(paths.DISK_DIR / "arch-hyprland.qcow2")
         self.iso = self.iso or str(paths.ISO_DIR / "archlinux-x86_64.iso")
@@ -142,6 +158,20 @@ class VMConfig(_Base):
         if self.memory_mb < 2048:
             problems.append("Memory below 2048 MB will not boot the installer.")
         return problems
+
+    def uses_gl(self) -> bool:
+        """True when this configuration asks QEMU for host OpenGL."""
+        return "gl=on" in self.display or "gl=es" in self.display or self.gpu.endswith("-gl")
+
+    def fall_back_to_software(self) -> bool:
+        """
+        Drop to the display path that cannot crash. Returns True if anything
+        changed, so the caller knows whether to tell the user.
+        """
+        if self.display == SAFE_DISPLAY and self.gpu == SAFE_GPU:
+            return False
+        self.display, self.gpu = SAFE_DISPLAY, SAFE_GPU
+        return True
 
     def build_args(self, install_mode: bool) -> list[str]:
         a: list[str] = [
@@ -226,6 +256,7 @@ class AppSettings(_Base):
     window_w: int = 1180
     window_h: int = 800
     setup_done: bool = False
+    gl_unusable: bool = False        # set once QEMU has crashed in its GL path
     follow_windows_accent: bool = False
 
     @classmethod

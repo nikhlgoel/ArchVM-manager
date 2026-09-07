@@ -13,7 +13,6 @@ import hashlib
 import os
 import shutil
 import subprocess
-import sys
 import urllib.request
 from dataclasses import dataclass
 from enum import Enum
@@ -243,12 +242,33 @@ def _d_qemu() -> tuple[Status, str]:
 
 
 def _d_virgl() -> tuple[Status, str]:
+    """
+    Report whether virgl is *present*, not whether it works.
+
+    Presence is all that can be checked cheaply. Whether the GL path survives
+    depends on the QEMU build's display backend, and some Windows builds crash
+    with an access violation seconds after the guest starts driving the GPU -
+    only with a guest actually running, so no pre-flight probe sees it. When
+    that has already happened once, the app records it and this reports the
+    truth instead of the promise.
+    """
     if not paths.QEMU_BIN.exists():
         return Status.UNKNOWN, "needs QEMU"
     code, out = _run([str(paths.QEMU_BIN), "-device", "help"], timeout=40)
-    if "virtio-vga-gl" in out:
-        return Status.OK, "virtio-vga-gl present — 3D acceleration available"
-    return Status.WARN, "No virgl in this QEMU build; Hyprland would software-render"
+    if "virtio-vga-gl" not in out:
+        return Status.WARN, "No virgl in this QEMU build; Hyprland will software-render"
+
+    try:
+        import json
+        f = paths.SETTINGS_FILE
+        if f.exists() and json.loads(f.read_text(encoding="utf-8")).get("gl_unusable"):
+            return (Status.WARN,
+                    "virtio-vga-gl is present but crashed this QEMU build; "
+                    "using software rendering")
+    except Exception:
+        pass
+
+    return Status.OK, "virtio-vga-gl present â€” 3D will be tried, with a fallback"
 
 
 def _d_disk() -> tuple[Status, str]:
@@ -403,20 +423,12 @@ def _f_iso(rep: Reporter) -> bool:
 
 
 def _f_seed(rep: Reporter) -> bool:
-    builder = paths.ROOT / "manager" / "build_seed.py"
-    if not builder.exists():
-        rep.log(f"Seed builder missing: {builder}")
-        return False
-    exe = sys.executable
-    if paths.is_frozen():
-        exe = shutil.which("python") or shutil.which("py") or ""
-        if not exe:
-            rep.log("Python is needed to rebuild seed.iso but was not found.")
-            return False
-    code, out = _run([exe, str(builder)], timeout=180)
-    rep.log(out.strip() or "seed.iso rebuilt.")
-    return code == 0
-
+    """Rebuild seed.iso in-process; a packaged build has no build_seed.py."""
+    from . import seedbuild
+    paths.deploy_seed_scripts()          # refresh from the shipped copies first
+    ok, msg = seedbuild.build()
+    rep.log(msg)
+    return ok
 
 def _f_disk_image(rep: Reporter) -> bool:
     if not paths.QEMU_IMG.exists():

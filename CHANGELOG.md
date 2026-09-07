@@ -4,6 +4,35 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] — 2026-09-07
+
+### Fixed
+
+- **A packaged build could not install Arch at all.** The installer scripts and
+  the seed-ISO builder were only ever read from the VM data folder and a source
+  checkout — nothing was bundled into the executable — so anyone who installed
+  from the `.exe` got an app that could detect QEMU, download the ISO and create
+  a disk, and then had no scripts to run. The scripts now ship inside the
+  build, are refreshed into the data folder on every start (so app updates
+  actually reach them), and `seed.iso` is built in-process with pycdlib.
+  Rebuilding also no longer shells out to `sys.executable`, which in a frozen
+  build is `ArchVM.exe` and relaunched the app instead of running Python.
+- **QEMU crashed a few seconds after start with 3D enabled.** On QEMU builds
+  whose GTK console has no DMABUF support, the virgl path takes an access
+  violation (`0xC0000005`) as soon as the guest drives the GPU — measured on
+  every GL combination tried. The app now recognises that exit signature,
+  switches to a display path that cannot crash, records it so the setup wizard
+  stops promising 3D, and explains what happened.
+- **QEMU showed "not responding" constantly.** Two causes. The SDL display
+  backend services its window on the emulation thread, so the window stopped
+  answering Windows under load — measured hung for 77% of samples with GL and
+  64% without, where GTK measured 0%. SDL is no longer offered and saved
+  configurations are migrated to GTK. Separately, disk I/O ran on QEMU's main
+  loop and now runs on a dedicated `iothread`.
+- The **3D acceleration check** claimed "3D acceleration available" whenever the
+  `virtio-vga-gl` device existed, which says nothing about whether it works. It
+  now reports what actually happened on this machine.
+
 ## [2.2.0] — 2026-09-07
 
 ### Added
@@ -88,5 +117,6 @@ First public release. (2.1.0 was built but never published.)
   README. The VM uses virgl for hardware-accelerated OpenGL instead.
 - Releases are unsigned, so SmartScreen warns on first run.
 
+[2.3.0]: https://github.com/nikhlgoel/ArchVM-manager/releases/tag/v2.3.0
 [2.2.0]: https://github.com/nikhlgoel/ArchVM-manager/releases/tag/v2.2.0
 [2.1.1]: https://github.com/nikhlgoel/ArchVM-manager/releases/tag/v2.1.1

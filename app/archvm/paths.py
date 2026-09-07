@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "ArchVM"
-APP_VERSION = "2.2.0"
+APP_VERSION = "2.3.0"
 ORG_NAME = "ArchVM"
 
 
@@ -120,6 +120,61 @@ LOG_DIR = ROOT / "logs"
 SETTINGS_FILE = CONFIG_DIR / "settings.json"
 VM_CONFIG_FILE = CONFIG_DIR / "vm.json"
 LEGACY_VM_CONFIG = ROOT / "manager" / "config.json"
+
+
+SEED_SCRIPTS = ("bootstrap.sh", "chroot-setup.sh", "firstboot.sh")
+
+
+def bundled_seed_dir() -> Path | None:
+    """
+    Where the installer scripts shipped with this build live.
+
+    Frozen: PyInstaller unpacks them to <resource>/seed. From source: the repo
+    keeps them one level above the package, at <repo>/seed.
+    """
+    return _first_existing(
+        resource_dir() / "seed",
+        resource_dir().parent / "seed",
+        Path(__file__).resolve().parent.parent.parent / "seed",
+    )
+
+
+def deploy_seed_scripts() -> list[str]:
+    """
+    Copy the shipped installer scripts into the VM data folder, replacing any
+    older copy.
+
+    The scripts used to live only in the data directory, which meant a packaged
+    build had none at all - the app could set everything up and then fail to
+    install anything - and an app update never reached the scripts, so fixes to
+    the install shipped but never ran. Content is compared rather than mtime,
+    because copying does not preserve it.
+
+    Returns the names actually written.
+    """
+    src = bundled_seed_dir()
+    if src is None or not src.is_dir():
+        return []
+    written: list[str] = []
+    try:
+        SEED_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return []
+    for name in SEED_SCRIPTS + ("vm.conf.example",):
+        s = src / name
+        if not s.is_file():
+            continue
+        d = SEED_DIR / name
+        try:
+            # LF matters: CRLF breaks these inside Linux.
+            data = s.read_bytes().replace(b"\r\n", b"\n")
+            if d.exists() and d.read_bytes() == data:
+                continue
+            d.write_bytes(data)
+            written.append(name)
+        except OSError:
+            continue
+    return written
 
 
 def ensure_dirs() -> None:

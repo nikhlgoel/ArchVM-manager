@@ -16,6 +16,23 @@ from .config import VMConfig
 # --------------------------------------------------------------------------- #
 #  Host -> guest text injection.  QEMU has no clipboard channel, so we type.
 # --------------------------------------------------------------------------- #
+#: A QEMU that dies inside this many seconds of starting did not "shut down".
+GL_CRASH_WINDOW_S = 180
+
+#: Windows structured-exception codes that mean QEMU crashed rather than exited.
+_CRASH_CODES = {
+    0xC0000005,   # access violation - the virgl/DMABUF path
+    0xC0000094,   # integer divide by zero
+    0xC00000FD,   # stack overflow
+    0xC000001D,   # illegal instruction
+    0x40000015,   # fatal app exit
+}
+
+
+def _is_crash(code: int) -> bool:
+    return (code & 0xFFFFFFFF) in _CRASH_CODES
+
+
 KEYMAP: dict[str, str] = {
     " ": "spc", "\n": "ret", "\r": "ret", "\t": "tab",
     "-": "minus", "_": "shift-minus", "=": "equal", "+": "shift-equal",
@@ -138,12 +155,15 @@ class VMRunner(QObject):
     state_changed = Signal(str)          # stopped | running
     output = Signal(str)
     failed = Signal(str)
+    gl_crashed = Signal(float)           # seconds survived before the crash
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.proc: QProcess | None = None
         self.install_mode = False
         self._last_args: list[str] = []
+        self._started_at: float | None = None
+        self._gl_requested = False
 
     def is_running(self) -> bool:
         return self.proc is not None and self.proc.state() != QProcess.NotRunning
@@ -170,6 +190,8 @@ class VMRunner(QObject):
             return False
 
         self.install_mode = install
+        self._gl_requested = cfg.uses_gl()
+        self._started_at = time.monotonic()
         self._last_args = cfg.build_args(install)
 
         self.proc = QProcess(self)
@@ -209,7 +231,21 @@ class VMRunner(QObject):
                              .decode("utf-8", "replace"))
 
     def _on_finished(self, code: int, _status) -> None:
-        self.output.emit(f"[vm] QEMU exited with code {code}")
+        ran_for = time.monotonic() - (self._started_at or time.monotonic())
+        self.output.emit(f"[vm] QEMU exited with code {code} after {ran_for:.0f}s")
+
+        # 0xC0000005 is a Windows access violation. QEMU takes one inside the
+        # GL path on builds whose GTK console has no DMABUF support: it warns
+        # "GtkGLArea console lacks DMABUF support" and then dies a few seconds
+        # in, as soon as the guest driver submits real work. Nothing in the
+        # configuration is wrong and no pre-flight check catches it, because it
+        # needs a guest actively driving the GPU to happen at all.
+        if self._gl_requested and _is_crash(code) and ran_for < GL_CRASH_WINDOW_S:
+            self.output.emit("[vm] that is the virgl crash signature "
+                             "(0x%08X) - 3D acceleration is not usable here"
+                             % (code & 0xFFFFFFFF))
+            self.gl_crashed.emit(ran_for)
+
         self.state_changed.emit("stopped")
 
     def _on_error(self, err) -> None:
