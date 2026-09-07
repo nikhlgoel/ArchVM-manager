@@ -24,33 +24,17 @@ jobs:
           pip install -r requirements.txt pyflakes
 
       - name: pyflakes
+        shell: bash
         run: python -m pyflakes app/archvm/*.py app/*.py app/tools/*.py manager/*.py
 
       - name: Byte-compile
         run: python -m compileall -q app manager
 
-      - name: Import every module
-        working-directory: app
+      - name: Smoke test
         env:
           QT_QPA_PLATFORM: offscreen
-        run: |
-          python -c "import archvm.app, archvm.window, archvm.tray, archvm.onboarding, archvm.deps, archvm.hostinfo, archvm.qemu, archvm.splash, archvm.theme, archvm.icons, archvm.widgets, archvm.config, archvm.paths; print('ok')"
-
-      - name: Build the main window offscreen
-        working-directory: app
-        env:
-          QT_QPA_PLATFORM: offscreen
-          ARCHVM_ROOT: ${{ runner.temp }}\archvm
-        run: |
-          python -c "
-          from PySide6.QtWidgets import QApplication
-          from PySide6.QtCore import QTimer
-          app = QApplication([])
-          from archvm.config import AppSettings, VMConfig
-          from archvm.window import MainWindow
-          w = MainWindow(VMConfig.load(), AppSettings.load()); w.show()
-          QTimer.singleShot(1500, app.quit); app.exec()
-          print('window ok')"
+          ARCHVM_ROOT: ${{ runner.temp }}/archvm
+        run: python app/tools/smoke_test.py
 
   seed:
     name: Seed ISO builds
