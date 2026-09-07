@@ -6,7 +6,7 @@ BASE = pathlib.Path(__file__).resolve().parent.parent
 SEED = BASE / "seed"
 OUT  = BASE / "iso" / "seed.iso"
 
-FILES = ["bootstrap.sh", "chroot-setup.sh", "firstboot.sh", "vm.conf"]
+FILES = ["bootstrap.sh", "chroot-setup.sh", "firstboot.sh", "repair.sh", "vm.conf"]
 
 
 def build():
