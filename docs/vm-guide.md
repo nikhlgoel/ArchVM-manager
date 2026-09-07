@@ -271,3 +271,56 @@ stopped:
 ```bash
 tail -40 ~/hypr-install.log
 ```
+
+---
+
+## What happens after the base install
+
+You should not see a console login at any point on the happy path:
+
+1. **Base install finishes** and the VM reboots.
+2. **The desktop builds itself.** A systemd unit (`archvm-setup.service`) runs
+   the build on first boot with its output on tty1, so the screen shows package
+   progress rather than a login prompt. Nobody needs to log in.
+3. **It enables SDDM and reboots** when finished.
+4. **You land on a graphical greeter** with the Hyprland session and your
+   account already selected.
+
+The build takes 30-60 minutes and compiles a lot of AUR packages. Interrupting
+it is safe — it holds a lock, resumes on the next boot, and appends to
+`~/hypr-install.log`.
+
+If the build **fails**, the unit hands tty1 back so you get a normal login and
+a message explaining how to resume.
+
+### Repairing an existing guest
+
+A VM installed by an older version can be upgraded to this flow. Boot the
+installer ISO with the disk attached and run:
+
+```
+mkdir -p /s && mount /dev/sr1 /s && bash /s/repair.sh
+```
+
+That installs the current first-boot script and unit, drops `quiet` from the
+kernel command line, fixes the sudo rule, and sets the right boot target. It is
+safe on a finished install — it detects the completion marker and only switches
+to the graphical target.
+
+### Why the sudo rule looks heavy-handed
+
+`/etc/sudoers.d/99-firstboot-tmp` contains:
+
+```
+Defaults:<user> !authenticate
+<user> ALL=(ALL:ALL) NOPASSWD: SETENV: ALL
+```
+
+A plain `NOPASSWD: ALL` is not sufficient. `makepkg` calls sudo with
+`--preserve-env`, which needs the `SETENV` tag, and any uncovered path falls
+back to prompting. Inside a systemd unit that prompt is effectively invisible
+and blocks the build indefinitely. `firstboot.sh` now asserts `sudo -n true`
+before starting, so a broken rule fails in seconds with an explanation instead
+of hanging.
+
+The rule is removed automatically when the build completes.
