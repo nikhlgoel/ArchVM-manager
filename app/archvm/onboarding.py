@@ -19,10 +19,10 @@ from PySide6.QtWidgets import (
     QPlainTextEdit, QScrollArea, QFrame, QSizePolicy, QApplication, QMessageBox,
 )
 
-from . import deps, icons, paths, theme
+from . import deps, hostinfo, icons, paths, theme
 from .config import AppSettings, VMConfig, INSTALL_CMD
 from .deps import Status
-from .widgets import Card, a11y, button, hline
+from .widgets import Backdrop, Card, Chip, a11y, button, hline
 
 STEPS = ["Welcome", "System check", "Configure", "Install", "Done"]
 
@@ -192,9 +192,14 @@ class Onboarding(QDialog):
 
     # ------------------------------------------------------------------ #
     def _build(self) -> None:
-        root = QWidget(self)
+        self.backdrop = Backdrop(self.pal, self)
+        shell = QVBoxLayout(self)
+        shell.setContentsMargins(0, 0, 0, 0)
+        shell.addWidget(self.backdrop)
+
+        root = QWidget(self.backdrop)
         root.setObjectName("Root")
-        outer = QVBoxLayout(self)
+        outer = QVBoxLayout(self.backdrop)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(root)
 
@@ -330,16 +335,38 @@ class Onboarding(QDialog):
     def _p_config(self) -> QWidget:
         page, v = self._panel(
             "Set up your Arch account",
-            "These are used inside the virtual machine. You can change them later "
-            "from the Guest page.")
+            "Everything below was read from your Windows settings. Change anything "
+            "you like — these are only starting points.")
         vals = self._read_vmconf()
+        self.host = hostinfo.cached()
+
+        det = Card("Detected from Windows",
+                   "Used as the defaults for this virtual machine.")
+        for note in self.host.detected:
+            row = QHBoxLayout()
+            tick = QLabel("✓")
+            tick.setFixedWidth(16)
+            tick.setStyleSheet("color: %s; font-weight: 700;" % self.pal.green)
+            lab = QLabel(note)
+            lab.setObjectName("CardHint")
+            lab.setWordWrap(True)
+            row.addWidget(tick)
+            row.addWidget(lab, 1)
+            det.add(row)
+        rr = QHBoxLayout()
+        bre = button("Re-detect")
+        bre.clicked.connect(self._redetect)
+        rr.addWidget(bre)
+        rr.addStretch()
+        det.add(rr)
+        v.addWidget(det)
 
         c = Card("Account")
         f = QFormLayout(); f.setSpacing(10)
-        self.ed_user = QLineEdit(vals.get("USERNAME", "arch"))
+        self.ed_user = QLineEdit(vals.get("USERNAME") or self.host.username)
         self.ed_pass = QLineEdit(vals.get("USERPASS", "arch"))
-        self.ed_host = QLineEdit(vals.get("HOSTNAME", "arch-hypr"))
-        self.ed_tz = QLineEdit(vals.get("TIMEZONE", "Asia/Kolkata"))
+        self.ed_host = QLineEdit(vals.get("HOSTNAME") or self.host.hostname)
+        self.ed_tz = QLineEdit(vals.get("TIMEZONE") or self.host.timezone)
         for w, n in ((self.ed_user, "Username"), (self.ed_pass, "Password"),
                      (self.ed_host, "Computer name"), (self.ed_tz, "Timezone")):
             a11y(w, n)
@@ -351,25 +378,38 @@ class Onboarding(QDialog):
         c.add(note)
         v.addWidget(c)
 
-        ram = deps.total_ram_gb()
-        cpus = deps.cpu_count()
-        sug_mem = max(4096, min(int(ram * 1024 * 0.5) // 1024 * 1024, 12288))
-        sug_cpu = max(2, min(cpus // 2, 12))
-
+        h = self.host
         c2 = Card("Virtual hardware",
-                  f"Suggested from your {ram:.0f} GB of RAM and {cpus} logical CPUs, "
-                  "leaving Windows enough to stay responsive.")
+                  f"Sized from your {h.ram_gb:.0f} GB of RAM and {h.logical_cpus} "
+                  "logical CPUs, leaving Windows enough to stay responsive.")
         f2 = QFormLayout(); f2.setSpacing(10)
-        self.sp_mem = QSpinBox(); self.sp_mem.setRange(2048, max(4096, int(ram * 1024) - 2048))
+        self.sp_mem = QSpinBox()
+        self.sp_mem.setRange(2048, max(4096, int(h.ram_gb * 1024) - 2048))
         self.sp_mem.setSingleStep(1024); self.sp_mem.setSuffix("  MB")
-        self.sp_mem.setValue(self.cfg.memory_mb or sug_mem)
+        self.sp_mem.setValue(h.suggested_memory_mb)
         a11y(self.sp_mem, "Memory")
         f2.addRow("Memory", self.sp_mem)
-        self.sp_cpu = QSpinBox(); self.sp_cpu.setRange(1, cpus)
-        self.sp_cpu.setValue(self.cfg.cpus or sug_cpu)
+        self.sp_cpu = QSpinBox(); self.sp_cpu.setRange(1, h.logical_cpus)
+        self.sp_cpu.setValue(h.suggested_cpus)
         a11y(self.sp_cpu, "CPU cores")
         f2.addRow("CPU cores", self.sp_cpu)
+
+        resw = QWidget(); rl = QHBoxLayout(resw); rl.setContentsMargins(0, 0, 0, 0)
+        self.sp_w = QSpinBox(); self.sp_w.setRange(640, 3840)
+        self.sp_w.setValue(h.display.width)
+        self.sp_h = QSpinBox(); self.sp_h.setRange(480, 2160)
+        self.sp_h.setValue(h.display.height)
+        a11y(self.sp_w, "Display width"); a11y(self.sp_h, "Display height")
+        rl.addWidget(self.sp_w); rl.addWidget(QLabel("×")); rl.addWidget(self.sp_h)
+        rl.addWidget(Chip("matches your screen"))
+        f2.addRow("Resolution", resw)
         c2.add(f2)
+        note2 = QLabel(
+            f"Your display reports {h.display.scale_percent}% scaling. The VM runs at "
+            "native pixels and Hyprland does its own scaling, so the guest is set to "
+            "the full panel resolution rather than the scaled size.")
+        note2.setObjectName("CardHint"); note2.setWordWrap(True)
+        c2.add(note2)
         v.addWidget(c2)
 
         c3 = Card("Ready to install")
@@ -560,6 +600,19 @@ class Onboarding(QDialog):
             self.check_summary.setStyleSheet(f"color: {self.pal.green};")
         self._sync_nav()
 
+    def _redetect(self) -> None:
+        self.host = hostinfo.refresh()
+        h = self.host
+        self.sp_mem.setValue(h.suggested_memory_mb)
+        self.sp_cpu.setValue(h.suggested_cpus)
+        self.sp_w.setValue(h.display.width)
+        self.sp_h.setValue(h.display.height)
+        self.ed_tz.setText(h.timezone)
+        self.ed_user.setText(h.username)
+        self.ed_host.setText(h.hostname)
+        QMessageBox.information(self, "Re-detected",
+                                "\n".join(h.detected) or "Nothing changed.")
+
     def _read_vmconf(self) -> dict:
         vals: dict[str, str] = {}
         p = paths.SEED_DIR / "vm.conf"
@@ -584,8 +637,8 @@ class Onboarding(QDialog):
             "TIMEZONE": self.ed_tz.text().strip() or "Asia/Kolkata",
             "AUTO_CONFIRM": "yes" if self.ck_confirm.isChecked() else "no",
         })
-        vals.setdefault("LOCALE", "en_US.UTF-8")
-        vals.setdefault("KEYMAP", "us")
+        vals["LOCALE"] = self.host.locale
+        vals["KEYMAP"] = self.host.console_keymap
         vals.setdefault("FORK_REPO", "https://github.com/pctrade/end4-pc.git")
         vals.setdefault("FORK_NAME", "end4-pC")
         body = "# written by ArchVM setup\n" + "".join(f"{k}={v}\n" for k, v in vals.items())
@@ -597,6 +650,10 @@ class Onboarding(QDialog):
 
         self.cfg.memory_mb = self.sp_mem.value()
         self.cfg.cpus = self.sp_cpu.value()
+        self.cfg.width = self.sp_w.value()
+        self.cfg.height = self.sp_h.value()
+        self.cfg.keymap = self.host.qemu_keymap
+        self.cfg.audio = self.host.has_audio
         self.cfg.username = self.ed_user.text().strip() or "arch"
         self.cfg.save()
 
