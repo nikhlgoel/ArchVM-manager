@@ -11,7 +11,7 @@ This directory contains the ready-to-run executables and installers for **ArchVM
 - **How it works**: A single self-contained `.exe` containing the embedded Python runtime, PySide6, and all dependencies. Unpacks into a temporary directory on start.
 - **Use case**: Put it on a USB drive or anywhere on your PC and run it directly without installing anything.
 
-### 2. `onedir/ArchVM/` (Folder Package)
+### 2. `onedir/` (Fast-Launch Folder Package)
 - **Files**: `ArchVM.exe` (~2.5 MB launcher) + `_internal/` dependency folder.
 - **How it works**: Pre-extracted Python runtime and libraries. Launches noticeably faster than the single-file executable because no unpacking is required.
 - **Use case**: Recommended for daily local execution. You can create a desktop shortcut to `ArchVM.exe`.
