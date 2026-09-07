@@ -1,0 +1,21 @@
+# Default: let git normalise text files in the repository.
+* text=auto
+
+# The installer scripts run inside Linux. CRLF breaks them with errors like
+# "$'\r': command not found", so pin LF regardless of core.autocrlf.
+*.sh   text eol=lf
+seed/* text eol=lf
+*.conf text eol=lf
+
+# Python is CRLF-tolerant, but keep the tree consistent.
+*.py   text eol=lf
+*.md   text eol=lf
+*.json text eol=lf
+*.txt  text eol=lf
+
+# Never touch binaries.
+*.ico  binary
+*.png  binary
+*.iso  binary
+*.qcow2 binary
+*.fd   binary
