@@ -8,10 +8,10 @@ Arch install then runs start to finish on its own.
 
 | File | |
 |---|---|
-| **`ArchVM-2.1.1-windows-x64-setup.exe`** | **Recommended.** Proper installer — Start Menu entry, optional desktop shortcut, and an uninstaller in Add/Remove Programs. Installs per-user with no UAC prompt, or system-wide if you choose. |
-| `ArchVM-2.1.1-windows-x64.zip` | Portable. Unzip anywhere and run `ArchVM.exe`. Nothing is written to the registry. |
-| `ArchVM-2.1.1-windows-x64-portable.exe` | Portable, single file. Tidiest, a few seconds slower to start. |
-| `seed-2.1.1.iso` | Only if rebuilding the seed ISO by hand. The app makes its own. |
+| **`ArchVM-2.2.0-windows-x64-setup.exe`** | **Recommended.** Proper installer — Start Menu entry, optional desktop shortcut, and an uninstaller in Add/Remove Programs. Installs per-user with no UAC prompt, or system-wide if you choose. |
+| `ArchVM-2.2.0-windows-x64.zip` | Portable. Unzip anywhere and run `ArchVM.exe`. Nothing is written to the registry. |
+| `ArchVM-2.2.0-windows-x64-portable.exe` | Portable, single file. Tidiest, a few seconds slower to start. |
+| `seed-2.2.0.iso` | Only if rebuilding the seed ISO by hand. The app makes its own. |
 
 Uninstalling never touches your VM disks or ISOs, and asks before removing your
 settings.
@@ -19,10 +19,25 @@ settings.
 Check your download against `SHA256SUMS.txt`:
 
 ```powershell
-Get-FileHash .\ArchVM-2.1.1-windows-x64.zip -Algorithm SHA256
+Get-FileHash .\ArchVM-2.2.0-windows-x64.zip -Algorithm SHA256
 ```
 
 Not code-signed, so SmartScreen warns on first run — *More info → Run anyway*.
+
+## New in 2.2.0
+
+**The install is now hands-off.** Press **Install Arch** and walk away — the
+base system installs, the VM restarts itself, the Hyprland desktop builds, and
+it reboots into the graphical login. Previously it stopped three times: to type
+`umount -R /mnt && reboot`, to log in at a bare console so the desktop build
+would start, and to reboot again at the end.
+
+**QEMU no longer freezes.** The "QEMU is not responding" dialog during install
+and first boot was disk I/O blocking QEMU's main loop — the same loop that
+answers Windows. Block I/O now runs on its own thread.
+
+**Choose where VM files live.** Settings → Locations → Change, with a
+free-space check. Existing files are left in place rather than silently copied.
 
 ## Highlights
 
