@@ -298,8 +298,10 @@ class Onboarding(QDialog):
             c.add(row)
         v.addWidget(c)
 
+        gpu = hostinfo.cached().gpu
+        subject = f"Your {gpu}" if gpu else "A discrete graphics card"
         c2 = Card("A note about your graphics card",
-                  "Your RTX 3050 cannot be passed through to a virtual machine on "
+                  f"{subject} cannot be passed through to a virtual machine on "
                   "Windows — Hyper-V DDA is Windows Server only, and QEMU's Windows "
                   "accelerator has no PCIe passthrough. The VM uses virgl instead, "
                   "which is GPU-accelerated OpenGL. Hyprland will be smooth, but this "

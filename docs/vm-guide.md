@@ -7,19 +7,24 @@ Launch **ArchVM Manager** from the Desktop or Start Menu.
 
 ---
 
-## About your RTX 3050
+## About your graphics card
 
-The VM **cannot** use it, and no software on a Windows host can change that:
+The VM **cannot** use your discrete GPU, and no software on a Windows host can
+change that:
 
 - **Hyper-V DDA** (real PCIe passthrough on Windows) requires Windows **Server**.
+  Home and Pro are both excluded.
 - **QEMU on Windows** runs on **WHPX**, which has no VFIO/PCIe passthrough. VFIO
   needs a **Linux host**.
-- Your 3050 is a **muxless laptop GPU** — it renders into the Intel iGPU's
-  framebuffer and has no independent display path.
+- Most **laptop dGPUs are muxless** — they render into the integrated GPU's
+  framebuffer and have no independent display path for a guest to drive.
 
 The VM uses **`virtio-vga-gl` (virgl)** instead: real GPU-backed OpenGL through
-the host. Good for Hyprland's compositing; not RTX-class. Bare metal (dual-boot
-or external SSD) is the only route to the actual GPU.
+the host driver. Good enough for Hyprland's compositing, blur and animations;
+not the same as bare metal. Dual-booting is the only route to the actual GPU.
+
+The setup wizard names the card it found on your machine, so the note you see
+there is about your hardware specifically.
 
 ---
 

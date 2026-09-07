@@ -166,6 +166,7 @@ class HostInfo:
     suggested_cpus: int = 4
     has_audio: bool = True
     windows_edition: str = ""
+    gpu: str = ""
     detected: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -315,6 +316,25 @@ def _detect_memory_cpu() -> tuple[float, int, int, int]:
     return ram, cpus, mem_mb, vcpu
 
 
+def _detect_gpu() -> str:
+    """
+    Name of the most capable graphics adapter, preferring a discrete one.
+
+    Only used to make the passthrough explanation concrete ("your RTX 4060"
+    rather than "your graphics card"), so an empty string is a fine answer.
+    """
+    out = _ps("(Get-CimInstance Win32_VideoController).Name -join '|'")
+    names = [n.strip() for n in (out.splitlines()[-1] if out else "").split("|")]
+    names = [n for n in names if n and "basic display" not in n.lower()]
+    if not names:
+        return ""
+    discrete = ("nvidia", "geforce", "rtx", "gtx", "quadro", "radeon", "arc ")
+    for n in names:
+        if any(k in n.lower() for k in discrete):
+            return n
+    return names[0]
+
+
 def _detect_audio() -> bool:
     out = _ps("@(Get-CimInstance Win32_SoundDevice | "
               "Where-Object { $_.Status -eq 'OK' }).Count")
@@ -381,6 +401,13 @@ def detect() -> HostInfo:
 
     try:
         info.has_audio = _detect_audio()
+    except Exception:
+        pass
+
+    try:
+        info.gpu = _detect_gpu()
+        if info.gpu:
+            notes.append(f"Graphics {info.gpu}")
     except Exception:
         pass
 
