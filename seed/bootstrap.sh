@@ -47,6 +47,7 @@ pacstrap -K /mnt \
   pipewire pipewire-pulse pipewire-alsa wireplumber \
   zram-generator polkit xdg-user-dirs \
   qemu-guest-agent spice-vdagent openssh wl-clipboard \
+  sddm xorg-server \
   fish reflector man-db
 
 echo "==> fstab"

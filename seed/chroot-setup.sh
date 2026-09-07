@@ -61,7 +61,14 @@ chmod 440 /etc/sudoers.d/10-wheel
 
 # Temporary passwordless sudo so the first-boot desktop install is unattended.
 # firstboot.sh deletes this file when it finishes.
-echo "$USERNAME ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/99-firstboot-tmp
+cat > /etc/sudoers.d/99-firstboot-tmp <<EOF
+# Temporary, removed by firstboot.sh when the desktop build finishes.
+# !authenticate is deliberate: makepkg calls sudo with --preserve-env, and a
+# bare NOPASSWD rule does not cover that, so the build stops on a hidden
+# password prompt. SETENV covers the same case explicitly.
+Defaults:$USERNAME !authenticate
+$USERNAME ALL=(ALL:ALL) NOPASSWD: SETENV: ALL
+EOF
 chmod 440 /etc/sudoers.d/99-firstboot-tmp
 
 echo "==> initramfs (virtio modules)"
@@ -102,10 +109,48 @@ cp /root/seed/vm.conf      "/home/$USERNAME/.vm.conf"
 chown "$USERNAME:$USERNAME" "/home/$USERNAME/firstboot.sh" "/home/$USERNAME/.vm.conf"
 chmod +x "/home/$USERNAME/firstboot.sh"
 
-# Auto-run the desktop install once, on first interactive login.
+# The desktop build runs as a systemd unit on first boot rather than waiting
+# for someone to log in. Output goes to tty1, so the first thing seen after
+# the base install is progress, not a login prompt.
+cat > /etc/systemd/system/archvm-setup.service <<EOF
+[Unit]
+Description=ArchVM first-boot desktop installation
+After=network-online.target systemd-user-sessions.service
+Wants=network-online.target
+# Own tty1 for the duration so output is not interleaved with a login prompt.
+Conflicts=getty@tty1.service
+Before=getty@tty1.service
+ConditionPathExists=!/home/$USERNAME/.local/share/hypr-setup-done
+
+[Service]
+Type=oneshot
+User=$USERNAME
+Group=$USERNAME
+WorkingDirectory=/home/$USERNAME
+Environment=HOME=/home/$USERNAME
+Environment=TERM=linux
+Environment=ARCHVM_UNATTENDED=1
+ExecStart=/home/$USERNAME/firstboot.sh
+StandardInput=tty
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+# A full desktop build compiles many AUR packages; never time it out.
+TimeoutStartSec=infinity
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl enable archvm-setup.service
+
+# Keep the login path as a fallback: if the unit is skipped or cancelled, a
+# normal login still resumes the build.
 cat >> "/home/$USERNAME/.bash_profile" <<'EOF'
 
-# --- one-shot desktop install ---
+# --- resume the desktop install if it has not finished ---
 if [ ! -f "$HOME/.local/share/hypr-setup-done" ] && [ -x "$HOME/firstboot.sh" ]; then
   "$HOME/firstboot.sh"
 fi

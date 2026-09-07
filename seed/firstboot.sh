@@ -4,6 +4,18 @@ set -uo pipefail
 source "$HOME/.vm.conf"
 
 LOG="$HOME/hypr-install.log"
+
+# The systemd unit and a login shell can both reach here. Only one may build,
+# or they fight over pacman's database lock.
+LOCK="$HOME/.local/share/archvm-setup.lock"
+mkdir -p "$(dirname "$LOCK")"
+exec 9>"$LOCK"
+if ! flock -n 9; then
+  echo "The desktop installation is already running (probably on tty1)."
+  echo "Watch it with:  tail -f $LOG"
+  exit 0
+fi
+
 exec > >(tee -a "$LOG") 2>&1
 
 echo "############################################################"
@@ -16,7 +28,20 @@ echo "#"
 echo "#  Log: $LOG"
 echo "############################################################"
 
-die(){ echo "!! FAILED: $*"; echo "!! Fix, then re-run: ~/firstboot.sh"; exit 1; }
+die(){
+  echo
+  echo "############################################################"
+  echo "!! FAILED: $*"
+  echo "!! Nothing is lost - this is resumable."
+  echo "!! Log in and it restarts, or run:  ~/firstboot.sh"
+  echo "!! Full log: $LOG"
+  echo "############################################################"
+  # Running unattended we own tty1; give it back so there is a usable login.
+  if [ "${ARCHVM_UNATTENDED:-}" = "1" ]; then
+    sudo systemctl start getty@tty1.service 2>/dev/null || true
+  fi
+  exit 1
+}
 
 # Self-heal: ensure the whole home tree is ours before anything writes to it.
 if [ "$(stat -c %U "$HOME/.local" 2>/dev/null || echo "$USER")" != "$USER" ]; then
@@ -28,6 +53,18 @@ fi
 # priority on every boot inside a VM. It is informational - the TDX guest
 # driver probing for Intel Trust Domain Extensions - and affects nothing.
 echo "==> Note: any 'TDX not supported' message in the log is harmless."
+
+# Assert unattended sudo before doing anything long. Without this a missing
+# rule surfaces an hour in, as a password prompt nobody is watching, and the
+# build hangs until the VM is killed.
+echo "==> Checking unattended sudo"
+if ! sudo -n true 2>/dev/null; then
+  die "passwordless sudo is not active. /etc/sudoers.d/99-firstboot-tmp is
+    missing or wrong, so the build would stop at a password prompt.
+    Re-run the installer, or add this as root and try again:
+      Defaults:$USER !authenticate"
+fi
+echo "    ok"
 
 echo "==> Waiting for network"
 for i in $(seq 1 30); do
@@ -111,24 +148,31 @@ fi
 grep -q 'WLR_NO_HARDWARE_CURSORS' "$HOME/.profile" 2>/dev/null || \
   echo 'export WLR_NO_HARDWARE_CURSORS=1' >> "$HOME/.profile"
 
-echo "==> Graphical login (SDDM) so the VM boots into a proper greeter"
-# Without this the VM lands on a black TTY and Hyprland must be typed by hand.
-# X11 greeter is used deliberately: the Wayland greeter needs a compositor
-# (kwin_wayland/weston) and is far more fragile inside a VM.
+echo "==> Configuring the graphical login"
+# sddm and xorg-server came with the base system, so this needs no network.
 sudo pacman -S --needed --noconfirm sddm xorg-server || die "sddm"
 
 sudo mkdir -p /etc/sddm.conf.d
-sudo tee /etc/sddm.conf.d/10-archvm.conf >/dev/null <<EOF
+sudo tee /etc/sddm.conf.d/10-archvm.conf >/dev/null <<'EOF'
+[General]
+# The X11 greeter is deliberate: SDDM's Wayland greeter needs its own
+# compositor and is markedly less reliable inside a VM.
+Numlock=on
+
 [Theme]
 Current=breeze
-
-[General]
-# Hyprland needs a seat; the default is fine but be explicit.
-Numlock=on
 EOF
 
-# Make sure a Hyprland session entry exists for SDDM to offer.
-if [ ! -f /usr/share/wayland-sessions/hyprland.desktop ] &&    [ ! -f /usr/share/wayland-sessions/hyprland-uwsm.desktop ]; then
+# Use the session file Hyprland actually installed, so the greeter opens on
+# the right entry rather than whatever sorts first.
+SESSION=""
+for cand in /usr/share/wayland-sessions/hyprland-uwsm.desktop \
+            /usr/share/wayland-sessions/hyprland.desktop; do
+  [ -f "$cand" ] && SESSION="$cand" && break
+done
+
+if [ -z "$SESSION" ]; then
+  echo "!! No Hyprland session file found; writing one."
   sudo mkdir -p /usr/share/wayland-sessions
   sudo tee /usr/share/wayland-sessions/hyprland.desktop >/dev/null <<'EOF'
 [Desktop Entry]
@@ -136,37 +180,43 @@ Name=Hyprland
 Comment=Dynamic tiling Wayland compositor
 Exec=Hyprland
 Type=Application
+DesktopNames=Hyprland
 EOF
+  SESSION=/usr/share/wayland-sessions/hyprland.desktop
 fi
+echo "    session: $SESSION"
 
+# SDDM preselects whatever it used last; seeding that state means the very
+# first greeter already has Hyprland and this account chosen.
+sudo mkdir -p /var/lib/sddm
+sudo tee /var/lib/sddm/state.conf >/dev/null <<EOF
+[Last]
+Session=$SESSION
+User=$USER
+EOF
+sudo chown -R sddm:sddm /var/lib/sddm 2>/dev/null || true
+
+echo "==> Switching to graphical boot"
 sudo systemctl enable sddm
 sudo systemctl set-default graphical.target
-
-# Hand the login back to SDDM. This must happen before sudo is revoked below,
-# and only on success - if the desktop install failed we died long before here,
-# leaving autologin in place so the retry is one command away.
-echo "==> Removing the temporary tty1 autologin"
-sudo rm -f /etc/systemd/system/getty@tty1.service.d/autologin.conf
-sudo rmdir /etc/systemd/system/getty@tty1.service.d 2>/dev/null || true
-sudo systemctl daemon-reload || true
+# The unattended unit has done its job; stop it claiming tty1 again.
+sudo systemctl disable archvm-setup.service 2>/dev/null || true
+sudo systemctl enable getty@tty1.service 2>/dev/null || true
 
 echo "==> Revoking temporary passwordless sudo"
 sudo rm -f /etc/sudoers.d/99-firstboot-tmp
 
 touch "$HOME/.local/share/hypr-setup-done"
-echo
-echo "############################################################"
-echo "#  DONE - the desktop is installed."
-echo "#  Rebooting into the graphical login."
-echo "#  Sign in as $USER; the Hyprland session is preselected."
-echo "#  Re-run this script any time: ~/firstboot.sh"
-echo "############################################################"
-echo
 
-if [ "${AUTO_REBOOT:-yes}" = "yes" ]; then
-  echo "Rebooting in 10 seconds - press Ctrl-C to stay at this shell."
-  for i in $(seq 10 -1 1); do echo "   $i..."; sleep 1; done
-  sudo systemctl reboot || sudo reboot
+echo
+echo "############################################################"
+echo "#  Done. Rebooting into the graphical login."
+echo "#  Sign in as $USER and pick the Hyprland session."
+echo "############################################################"
+sleep 5
+
+if [ "${ARCHVM_UNATTENDED:-}" = "1" ]; then
+  sudo systemctl reboot
 else
-  echo "Run 'sudo reboot' to reach the graphical login."
+  echo "Run 'sudo systemctl reboot' when ready."
 fi
