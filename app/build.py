@@ -2,9 +2,10 @@
 """
 Build ArchVM.exe with PyInstaller.
 
-    python build.py            # onedir (fast start, recommended)
-    python build.py --onefile  # single .exe (slower start, tidier)
-    python build.py --clean    # wipe build/ and dist/ first
+    python build.py                    # onedir (fast start, recommended)
+    python build.py --onefile          # single .exe (slower start, tidier)
+    python build.py --clean            # wipe build/ and dist/ first
+    python build.py --sign "Subject"   # Authenticode-sign the result
 
 Also (re)generates the application icon and refreshes the Desktop and
 Start Menu shortcuts so they point at the built executable.
@@ -98,6 +99,47 @@ def build(onefile: bool = False, clean: bool = False) -> Path | None:
     return exe
 
 
+def find_signtool() -> Path | None:
+    """Locate signtool.exe from the Windows SDK. Newest version wins."""
+    from shutil import which
+    found = which("signtool")
+    if found:
+        return Path(found)
+    for base in (Path(r"C:\Program Files (x86)\Windows Kits\10\bin"),
+                 Path(r"C:\Program Files\Windows Kits\10\bin")):
+        if not base.exists():
+            continue
+        cands = sorted(base.glob("*/x64/signtool.exe"), reverse=True)
+        if cands:
+            return cands[0]
+    return None
+
+
+def sign(exe: Path, subject: str) -> bool:
+    """
+    Authenticode-sign the executable. Always timestamps: without one the
+    signature stops validating the day the certificate expires.
+    """
+    tool = find_signtool()
+    if not tool:
+        log("signtool not found - install the Windows SDK. Skipping signing.")
+        return False
+    cmd = [str(tool), "sign", "/fd", "SHA256",
+           "/tr", "http://timestamp.digicert.com", "/td", "SHA256",
+           "/n", subject, str(exe)]
+    log(f"signing with \"{subject}\"...")
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        log("signing FAILED: " + (r.stdout + r.stderr).strip()[:400])
+        log("See docs/code-signing.md for how to obtain a certificate.")
+        return False
+    v = subprocess.run([str(tool), "verify", "/pa", str(exe)],
+                       capture_output=True, text=True)
+    log("signed and verified" if v.returncode == 0
+        else "signed, but verification failed")
+    return True
+
+
 def make_shortcuts(exe: Path) -> None:
     """Point Desktop + Start Menu at the built exe. Silently skips on failure."""
     ps = f'''
@@ -138,6 +180,15 @@ def main() -> int:
     exe = build(onefile=onefile, clean=clean)
     if not exe:
         return 1
+
+    if "--sign" in sys.argv:
+        i = sys.argv.index("--sign")
+        subject = sys.argv[i + 1] if len(sys.argv) > i + 1 else ""
+        if subject:
+            sign(exe, subject)
+        else:
+            log("--sign needs a certificate subject name; skipping.")
+
     make_shortcuts(exe)
     print(f"\nDone.  {exe}\n")
     return 0
