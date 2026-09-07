@@ -130,23 +130,26 @@ cat > "$HOME/.config/uwsm/env" <<'EOF'
 # virtio_gpu DRM driver. Forcing "virpipe" picks the vtest backend, which
 # expects a virgl_test_server socket and renders badly.
 export WLR_NO_HARDWARE_CURSORS=1
+export WLR_RENDERER_ALLOW_SOFTWARE=1
 export XDG_SESSION_TYPE=wayland
 EOF
 
 # Hyprland tuning for a virtual GPU: VFR causes full-screen repaints when the
-# compositor wakes from idle, and blur is costly without DMABUF.
+# compositor wakes from idle, and blur/shadows are costly in software rendering.
 mkdir -p "$HOME/.config/hypr/custom"
 if [ ! -s "$HOME/.config/hypr/custom/general.lua" ] ||    ! grep -q 'vfr' "$HOME/.config/hypr/custom/general.lua" 2>/dev/null; then
   cat > "$HOME/.config/hypr/custom/general.lua" <<'EOF'
 -- QEMU/virtio-gpu tuning (added by automated setup)
 hl.config({
     misc = { vfr = false },
-    decoration = { blur = { enabled = false } },
+    decoration = { blur = { enabled = false }, shadow = { enabled = false } },
 })
 EOF
 fi
 grep -q 'WLR_NO_HARDWARE_CURSORS' "$HOME/.profile" 2>/dev/null || \
   echo 'export WLR_NO_HARDWARE_CURSORS=1' >> "$HOME/.profile"
+grep -q 'WLR_RENDERER_ALLOW_SOFTWARE' "$HOME/.profile" 2>/dev/null || \
+  echo 'export WLR_RENDERER_ALLOW_SOFTWARE=1' >> "$HOME/.profile"
 
 echo "==> Configuring the graphical login"
 # sddm and xorg-server came with the base system, so this needs no network.

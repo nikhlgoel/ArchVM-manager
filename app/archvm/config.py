@@ -236,8 +236,12 @@ class VMConfig(_Base):
             a += ["-full-screen"]
 
         a += [
-            "-netdev", f"user,id=n0,hostfwd=tcp::{self.ssh_port}-:22",
+            "-netdev", f"user,id=n0,hostfwd=tcp:127.0.0.1:{self.ssh_port}-:22",
             "-device", "virtio-net-pci,netdev=n0",
+            # Bidirectional clipboard sharing between Windows host and guest
+            "-device", "virtio-serial-pci",
+            "-chardev", "qemu-vdagent,id=vdagent,name=vdagent,clipboard=on",
+            "-device", "virtserialport,chardev=vdagent,name=com.redhat.spice.0",
         ]
 
         # Absolute pointer, no mouse grab.  The keyboard is deliberately NOT

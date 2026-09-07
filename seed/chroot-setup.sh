@@ -71,8 +71,10 @@ $USERNAME ALL=(ALL:ALL) NOPASSWD: SETENV: ALL
 EOF
 chmod 440 /etc/sudoers.d/99-firstboot-tmp
 
+sed -i 's/^#ParallelDownloads = 5/ParallelDownloads = 8/' /etc/pacman.conf 2>/dev/null || true
+
 echo "==> initramfs (virtio modules)"
-sed -i 's/^MODULES=()/MODULES=(virtio virtio_blk virtio_pci virtio_net virtio_gpu)/' /etc/mkinitcpio.conf
+sed -i 's/^MODULES=()/MODULES=(virtio virtio_blk virtio_pci virtio_net virtio_gpu virtio_ring virtio_balloon virtio_console)/' /etc/mkinitcpio.conf
 mkinitcpio -P
 
 echo "==> systemd-boot"

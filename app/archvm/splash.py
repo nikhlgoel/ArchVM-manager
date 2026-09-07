@@ -8,10 +8,11 @@ from — a flat logo on a gradient reads as a loading screen, not a product.
 """
 from __future__ import annotations
 
+import math
 from PySide6.QtCore import (Qt, QTimer, QRectF, QPointF, QPropertyAnimation,
                             QEasingCurve, QElapsedTimer)
 from PySide6.QtGui import (QPainter, QColor, QFont, QPainterPath,
-                           QLinearGradient, QTransform, QBrush, QPen)
+                           QLinearGradient, QRadialGradient, QTransform, QBrush, QPen)
 from PySide6.QtWidgets import QWidget, QApplication
 
 from . import icons, paths, theme
@@ -47,7 +48,8 @@ class Splash(QWidget):
         self.resize(560, 340)
         self._centre()
 
-        self._mark = icons.app_icon().pixmap(150, 150)
+        self._mark = icons.mark(256)
+        self._disp_w = 144.0
 
         if not reduce_motion:
             self._timer = QTimer(self)
@@ -196,7 +198,19 @@ class Splash(QWidget):
         cy -= (1.0 - k) * 18.0
         scale = 0.92 + 0.08 * k
         mark = self._mark
-        mw = mark.width()
+        mw = getattr(self, "_disp_w", 144.0)
+
+        # ambient glow behind the mark matching the brand gradient
+        p.save()
+        glow = QRadialGradient(cx, cy, mw * 0.55)
+        glow_alpha = int(42 * (0.8 + 0.2 * math.sin(self._spin * 2)) * k)
+        glow.setColorAt(0.0, QColor(79, 134, 255, glow_alpha))
+        glow.setColorAt(0.65, QColor(139, 92, 246, int(glow_alpha * 0.45)))
+        glow.setColorAt(1.0, QColor(0, 0, 0, 0))
+        p.setPen(Qt.NoPen)
+        p.setBrush(QBrush(glow))
+        p.drawEllipse(QPointF(cx, cy), mw * 0.55, mw * 0.55)
+        p.restore()
 
         # cast shadow: squashed ellipse under the mark
         p.save()
@@ -210,7 +224,7 @@ class Splash(QWidget):
                       mw * 0.44 * spread, mw * 0.10)
         p.restore()
 
-        # the mark itself, tilted very slightly
+        # the mark itself, tilted very slightly and rendered high-DPI
         p.save()
         p.setOpacity(k)
         t = QTransform()
@@ -220,7 +234,7 @@ class Splash(QWidget):
         t.scale(scale, scale)
         t.translate(-mw / 2, -mw / 2)
         p.setTransform(t, True)
-        p.drawPixmap(0, 0, mark)
+        p.drawPixmap(QRectF(0, 0, mw, mw), mark, QRectF(mark.rect()))
         p.restore()
 
         # reflection, fading out
@@ -230,7 +244,7 @@ class Splash(QWidget):
         t2.translate(cx - mw * scale / 2, cy + mw * 0.52)
         t2.scale(scale, -0.42 * scale)
         p.setTransform(t2, True)
-        p.drawPixmap(0, 0, mark)
+        p.drawPixmap(QRectF(0, 0, mw, mw), mark, QRectF(mark.rect()))
         p.restore()
 
         # --- wordmark ---

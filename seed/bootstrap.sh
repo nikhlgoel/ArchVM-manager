@@ -21,8 +21,11 @@ else
   [ "$ok" = "YES" ] || { echo "aborted"; exit 1; }
 fi
 
-echo "==> Clock + mirrors"
+echo "==> Clock + mirrors & parallel downloads"
 timedatectl set-ntp true || true
+sed -i 's/^#ParallelDownloads = 5/ParallelDownloads = 8/' /etc/pacman.conf 2>/dev/null || true
+pacman-key --init 2>/dev/null || true
+pacman-key --populate archlinux 2>/dev/null || true
 pacman -Sy --noconfirm archlinux-keyring || true
 
 echo "==> Partitioning $DISK (GPT: 1G EFI + rest ext4)"
@@ -39,12 +42,15 @@ mount "${DISK}2" /mnt
 mkdir -p /mnt/boot
 mount "${DISK}1" /mnt/boot
 
-echo "==> pacstrap base system (this takes a while)"
+echo "==> pacstrap base system, drivers and desktop portals (accelerated)"
 pacstrap -K /mnt \
   base base-devel linux linux-firmware \
   networkmanager sudo git curl wget nano vim \
-  mesa mesa-utils vulkan-virtio vulkan-icd-loader libva-mesa-driver \
-  pipewire pipewire-pulse pipewire-alsa wireplumber \
+  mesa mesa-utils vulkan-virtio vulkan-swrast vulkan-icd-loader vulkan-tools libva-mesa-driver \
+  xf86-video-fbdev xf86-video-vesa \
+  pipewire pipewire-pulse pipewire-alsa pipewire-jack wireplumber alsa-utils sof-firmware \
+  xdg-desktop-portal xdg-desktop-portal-hyprland xdg-desktop-portal-gtk \
+  noto-fonts noto-fonts-cjk noto-fonts-emoji ttf-dejavu ttf-liberation ttf-jetbrains-mono-nerd \
   zram-generator polkit xdg-user-dirs \
   qemu-guest-agent spice-vdagent openssh wl-clipboard \
   sddm xorg-server \
