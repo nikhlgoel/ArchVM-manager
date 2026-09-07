@@ -77,9 +77,15 @@ jobs:
           Copy-Item iso/seed.iso        "release/seed-$v.iso"
 
           Push-Location release
-          Get-ChildItem -File | ForEach-Object {
+          # LF endings, no BOM: Set-Content would write CRLF, which makes
+          # "sha256sum -c" fail on Linux, WSL and Git Bash.
+          $lines = Get-ChildItem -File | ForEach-Object {
             "{0}  {1}" -f (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower(), $_.Name
-          } | Set-Content -Encoding utf8 SHA256SUMS.txt
+          }
+          [IO.File]::WriteAllText(
+            (Join-Path $PWD 'SHA256SUMS.txt'),
+            ($lines -join "`n") + "`n",
+            (New-Object Text.UTF8Encoding $false))
           Get-Content SHA256SUMS.txt
           Pop-Location
 
