@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/nikhlgoel/ArchVM-manager/security/advisories/new
+    about: Please report security issues privately, not as a public issue.
+  - name: Hyprland desktop configuration
+    url: https://github.com/end-4/dots-hyprland/issues
+    about: The desktop config is upstream. Report issues with it there.

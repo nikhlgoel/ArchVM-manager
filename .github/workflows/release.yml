@@ -1,0 +1,90 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and publish (e.g. v2.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Windows executables
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Resolve version
+        id: v
+        shell: bash
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=$tag"           >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}"   >> "$GITHUB_OUTPUT"
+
+      - name: Build (onedir)
+        working-directory: app
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python build.py --clean --no-shortcuts
+
+      - name: Build (onefile)
+        working-directory: app
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python build.py --onefile --no-shortcuts
+
+      - name: Build seed.iso
+        run: |
+          Copy-Item seed/vm.conf.example seed/vm.conf
+          python manager/build_seed.py
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $v = "${{ steps.v.outputs.version }}"
+          New-Item -ItemType Directory -Force release | Out-Null
+
+          Compress-Archive -Path app/dist/ArchVM/* `
+                           -DestinationPath "release/ArchVM-$v-windows-x64.zip"
+          Copy-Item app/dist/ArchVM.exe "release/ArchVM-$v-windows-x64-portable.exe"
+          Copy-Item iso/seed.iso        "release/seed-$v.iso"
+
+          Push-Location release
+          Get-ChildItem -File | ForEach-Object {
+            "{0}  {1}" -f (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower(), $_.Name
+          } | Set-Content -Encoding utf8 SHA256SUMS.txt
+          Get-Content SHA256SUMS.txt
+          Pop-Location
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: archvm-windows-x64
+          path: release/
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.v.outputs.tag }}
+          name: ArchVM Manager ${{ steps.v.outputs.tag }}
+          body_path: docs/release-notes.md
+          draft: true
+          files: release/*

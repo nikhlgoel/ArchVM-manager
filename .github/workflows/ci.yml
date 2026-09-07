@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Lint and import check
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyflakes
+
+      - name: pyflakes
+        run: python -m pyflakes app/archvm/*.py app/*.py app/tools/*.py manager/*.py
+
+      - name: Byte-compile
+        run: python -m compileall -q app manager
+
+      - name: Import every module
+        working-directory: app
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -c "import archvm.app, archvm.window, archvm.tray, archvm.onboarding, archvm.deps, archvm.hostinfo, archvm.qemu, archvm.splash, archvm.theme, archvm.icons, archvm.widgets, archvm.config, archvm.paths; print('ok')"
+
+      - name: Build the main window offscreen
+        working-directory: app
+        env:
+          QT_QPA_PLATFORM: offscreen
+          ARCHVM_ROOT: ${{ runner.temp }}\archvm
+        run: |
+          python -c "
+          from PySide6.QtWidgets import QApplication
+          from PySide6.QtCore import QTimer
+          app = QApplication([])
+          from archvm.config import AppSettings, VMConfig
+          from archvm.window import MainWindow
+          w = MainWindow(VMConfig.load(), AppSettings.load()); w.show()
+          QTimer.singleShot(1500, app.quit); app.exec()
+          print('window ok')"
+
+  seed:
+    name: Seed ISO builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pycdlib
+
+      - name: Check the install scripts have LF endings
+        run: |
+          for f in seed/*.sh; do
+            if grep -qU $'\r' "$f"; then
+              echo "::error file=$f::CRLF line endings will break this script inside Linux"
+              exit 1
+            fi
+          done
+          echo "all seed scripts are LF"
+
+      - name: shellcheck
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y shellcheck
+          shellcheck --severity=error seed/*.sh
+
+      - name: Build seed.iso
+        run: |
+          cp seed/vm.conf.example seed/vm.conf
+          python manager/build_seed.py

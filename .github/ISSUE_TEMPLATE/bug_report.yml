@@ -1,0 +1,73 @@
+name: Bug report
+description: Something in the manager or the automated install went wrong
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check the **Troubleshooting** section of
+        [`docs/vm-guide.md`](../blob/main/docs/vm-guide.md) first.
+
+        Note that **GPU passthrough is not possible on a Windows host** and is
+        not a bug — see the README.
+
+  - type: input
+    id: version
+    attributes:
+      label: ArchVM version
+      description: From Help → About, or the release you downloaded.
+      placeholder: "2.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows edition and build
+      description: "Run `winver`, or paste the output of `Get-ComputerInfo -Property OsName,OsVersion`."
+      placeholder: "Windows 11 Home 26100"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Where did it go wrong?
+      options:
+        - Setup wizard - system check
+        - Setup wizard - installing prerequisites
+        - Setup wizard - downloading the Arch ISO
+        - Starting the VM
+        - The automated Arch install inside the VM
+        - First boot / Hyprland desktop
+        - The manager interface itself
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the setup wizard
+        2. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >
+        The contents of the Logs page, or the wizard's install log. This is
+        automatically formatted as code, so no backticks needed.
+      render: text

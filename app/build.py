@@ -6,6 +6,7 @@ Build ArchVM.exe with PyInstaller.
     python build.py --onefile          # single .exe (slower start, tidier)
     python build.py --clean            # wipe build/ and dist/ first
     python build.py --sign "Subject"   # Authenticode-sign the result
+    python build.py --no-shortcuts     # skip the Desktop/Start Menu step (CI)
 
 Also (re)generates the application icon and refreshes the Desktop and
 Start Menu shortcuts so they point at the built executable.
@@ -264,7 +265,10 @@ def main() -> int:
         else:
             log("--sign needs a certificate subject name; skipping.")
 
-    make_shortcuts(exe)
+    if "--no-shortcuts" in sys.argv:
+        log("shortcuts skipped (--no-shortcuts)")
+    else:
+        make_shortcuts(exe)
     print(f"\nDone.  {exe}\n")
     return 0
 
