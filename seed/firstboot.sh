@@ -8,6 +8,11 @@ exec > >(tee -a "$LOG") 2>&1
 
 echo "############################################################"
 echo "#  Installing illogical-impulse (Hyprland) + $FORK_NAME"
+echo "#"
+echo "#  This takes 30-60 minutes and compiles a lot of packages."
+echo "#  It is safe to interrupt: log in again, or run ~/firstboot.sh,"
+echo "#  and it picks up where it stopped."
+echo "#"
 echo "#  Log: $LOG"
 echo "############################################################"
 
@@ -18,6 +23,11 @@ if [ "$(stat -c %U "$HOME/.local" 2>/dev/null || echo "$USER")" != "$USER" ]; th
   echo "==> Fixing ownership of $HOME"
   sudo chown -R "$USER:$USER" "$HOME"
 fi
+
+# The kernel logs "virt/tdx: TDX not supported by the host platform" at error
+# priority on every boot inside a VM. It is informational - the TDX guest
+# driver probing for Intel Trust Domain Extensions - and affects nothing.
+echo "==> Note: any 'TDX not supported' message in the log is harmless."
 
 echo "==> Waiting for network"
 for i in $(seq 1 30); do

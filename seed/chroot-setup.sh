@@ -81,7 +81,7 @@ cat > /boot/loader/entries/arch.conf <<EOF
 title   Arch Linux (Hyprland)
 linux   /vmlinuz-linux
 initrd  /initramfs-linux.img
-options root=UUID=$ROOT_UUID rw quiet
+options root=UUID=$ROOT_UUID rw
 EOF
 
 echo "==> Services"
@@ -123,6 +123,14 @@ cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf <<EOF
 [Service]
 ExecStart=
 ExecStart=-/sbin/agetty -o '-p -f -- \u' --noclear --autologin $USERNAME %I \$TERM
+EOF
+
+cat > /etc/issue <<'EOF'
+Arch Linux \r (\l)
+
+  If the desktop is not installed yet, just log in - the installer
+  resumes automatically. To re-run it by hand:  ~/firstboot.sh
+
 EOF
 
 echo "==> Stage 2 complete"
