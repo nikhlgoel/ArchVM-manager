@@ -1,0 +1,4 @@
+PySide6-Essentials>=6.6
+pycdlib>=1.14
+Pillow>=10.0        # optional: multi-resolution .ico export
+pyinstaller>=6.0    # build only
